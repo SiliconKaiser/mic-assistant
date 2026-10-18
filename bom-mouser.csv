@@ -1,0 +1,9 @@
+﻿Mouser Part Number,Quantity,Customer Part Number,Description
+713-113991114,1,REQUIRED,"Seeed XIAO ESP32-S3 (plain, no camera/mic)"
+485-3492,1,REQUIRED,Adafruit PDM MEMS microphone breakout
+485-3006,1,REQUIRED,Adafruit MAX98357A I2S amp breakout
+485-1612,1,REQUIRED,Adafruit NeoPixel Mini PCB 5-pack (status LED)
+910-SMD291NL,1,REQUIRED,"Chip Quik no-clean tack flux, 5cc syringe"
+485-830,1,RECOMMENDED,Adafruit 4xAA holder - final-design battery; prototype can use your 4xAAA clip
+485-4474,1,RECOMMENDED,USB-A to USB-C cable - skip if you have a USB-C data cable
+485-1609,1,RECOMMENDED,Adafruit Perma-Proto half-size PCB

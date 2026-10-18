@@ -1,0 +1,15 @@
+﻿Tier,Item,Qty,Seller,Seller part #,Unit USD,Stock (checked 2026-10-18),Notes,Link
+Required,Pololu Mini Pushbutton Power Switch LV (#2808),1,Pololu,2808,4.95,211 (live check),,https://www.pololu.com/product/2808
+Required,Pololu S9V11F5 5V step-up/step-down regulator (#2836),1,Pololu,2836,6.95,142 (live check),,https://www.pololu.com/product/2836
+Required,AAA alkaline cells,8,Any local store,,,,"For your 4xAAA clip (4 + 4 spare). Same voltage as 4xAA, about 40% of the capacity: fine for prototyping",
+Required,Multimeter with a uA range,1,Likely have,,,,Tool; confirm you have one,
+Required,"Wire strippers, flush cutters",1,Likely have,,,,Tool; confirm you have them,
+Recommended,Spare Pololu #2808 latch,1,Pololu,2808,4.95,211 (live check),Ships with the order above,https://www.pololu.com/product/2808
+Recommended,AA alkaline cells,4,Any local store,,,,Only if you buy the 4xAA holder,
+Nice-to-have,"Adafruit hook-up wire spool set, 22 AWG (#1311)",1,Mouser,485-1311,15.95,196,Jumpers are OK for a breadboard prototype; heavier wire helps the power path,https://www.mouser.com/ProductDetail/Adafruit/1311
+Nice-to-have,Adafruit TPL5110 low-power timer breakout (#3435),1,Mouser,485-3435,4.95,209,Scheduled wakes,https://www.mouser.com/ProductDetail/Adafruit/3435
+Nice-to-have,Nordic Power Profiler Kit II (NRF-PPK2),1,Digi-Key,1490-NRF-PPK2-ND,107.3,1156,,https://www.digikey.com/en/products/detail/nordic-semiconductor-asa/NRF-PPK2/13557476
+Nice-to-have,Lithium AA cells (Energizer L91),4,Any local store,,,,Diagnose voltage sag,
+Nice-to-have,Bench power supply with current limit,1,Your choice,,,,,
+Nice-to-have,"Logic analyzer, 8-channel",1,Your choice,,,,,
+Nice-to-have,Helping hands or a PCB holder,1,Your choice,,,,,
