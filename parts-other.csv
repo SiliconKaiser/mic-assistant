@@ -6,6 +6,7 @@ Required,Multimeter with a uA range,1,Likely have,,,,Tool; confirm you have one,
 Required,"Wire strippers, flush cutters",1,Likely have,,,,Tool; confirm you have them,
 Recommended,Spare Pololu #2808 latch,1,Pololu,2808,4.95,211 (live check),Ships with the order above,https://www.pololu.com/product/2808
 Recommended,AA alkaline cells,4,Any local store,,,,Only if you buy the 4xAA holder,
+Recommended,"JST-PH 2.0 2-pin connector kit, 30 pcs male/female with 10 cm silicone wire",1,Amazon,,,,Plug-in battery and speaker leads. Cheaper per pair than Mouser (Adafruit #261 / #4714 at $0.75-0.95 each),
 Nice-to-have,"Adafruit hook-up wire spool set, 22 AWG (#1311)",1,Mouser,485-1311,15.95,196,Jumpers are OK for a breadboard prototype; heavier wire helps the power path,https://www.mouser.com/ProductDetail/Adafruit/1311
 Nice-to-have,Adafruit TPL5110 low-power timer breakout (#3435),1,Mouser,485-3435,4.95,209,Scheduled wakes,https://www.mouser.com/ProductDetail/Adafruit/3435
 Nice-to-have,Nordic Power Profiler Kit II (NRF-PPK2),1,Digi-Key,1490-NRF-PPK2-ND,107.3,1156,,https://www.digikey.com/en/products/detail/nordic-semiconductor-asa/NRF-PPK2/13557476
@@ -13,3 +14,4 @@ Nice-to-have,Lithium AA cells (Energizer L91),4,Any local store,,,,Diagnose volt
 Nice-to-have,Bench power supply with current limit,1,Your choice,,,,,
 Nice-to-have,"Logic analyzer, 8-channel",1,Your choice,,,,,
 Nice-to-have,Helping hands or a PCB holder,1,Your choice,,,,,
+Nice-to-have,"USB-C power meter KWS-2303C (4-30V, 0-12A)",1,Amazon,,13.79,,"Cheaper than Mouser (Adafruit #2690 $19.95, #4232 $24.95). Only measures draw while on USB, not the battery path",
