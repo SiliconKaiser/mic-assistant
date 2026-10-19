@@ -6,7 +6,7 @@ Required,Multimeter with a uA range,1,Likely have,,,,Tool; confirm you have one,
 Required,"Wire strippers, flush cutters",1,Likely have,,,,Tool; confirm you have them,
 Recommended,Spare Pololu #2808 latch,1,Pololu,2808,4.95,211 (live check),Ships with the order above,https://www.pololu.com/product/2808
 Recommended,AA alkaline cells,4,Any local store,,,,Only if you buy the 4xAA holder,
-Recommended,"JST-PH 2.0 2-pin connector kit, 30 pcs male/female with 10 cm silicone wire",1,Amazon,,,,Plug-in battery and speaker leads. Cheaper per pair than Mouser (Adafruit #261 / #4714 at $0.75-0.95 each),
+Recommended,"JST-PH 2.0 2-pin connector kit, 30 pcs male/female with 10 cm silicone wire",1,Amazon,,,,"Plug-in battery and speaker leads. No mating-pair option at Mouser: Adafruit #261 is one half only, its mate #3814 is out of stock, and #4714 is plug-to-plug",
 Nice-to-have,"Adafruit hook-up wire spool set, 22 AWG (#1311)",1,Mouser,485-1311,15.95,196,Jumpers are OK for a breadboard prototype; heavier wire helps the power path,https://www.mouser.com/ProductDetail/Adafruit/1311
 Nice-to-have,Adafruit TPL5110 low-power timer breakout (#3435),1,Mouser,485-3435,4.95,209,Scheduled wakes,https://www.mouser.com/ProductDetail/Adafruit/3435
 Nice-to-have,Nordic Power Profiler Kit II (NRF-PPK2),1,Digi-Key,1490-NRF-PPK2-ND,107.3,1156,,https://www.digikey.com/en/products/detail/nordic-semiconductor-asa/NRF-PPK2/13557476
