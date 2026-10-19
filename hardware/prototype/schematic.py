@@ -4,7 +4,7 @@ Net-label style: every connection is named, and pins with the same net
 label are connected. Render with:
 
     pip install schemdraw matplotlib
-    python hardware/schematic.py        # writes schematic.svg / schematic.png
+    python hardware/prototype/schematic.py        # writes schematic.svg / schematic.png
 """
 from pathlib import Path
 
