@@ -2,7 +2,7 @@
 
 Build the prototype in six stages, testing each one before adding the next. If something fails, the problem is almost always in the part you just added.
 
-The circuit is in [schematic.svg](schematic.svg) and [netlist.md](netlist.md). When this guide says "connect to VSW" or "connect to 5V", that's a net from the netlist.
+The circuit is in [netlist.md](netlist.md). When this guide says "connect to VSW" or "connect to 5V", that's a net from the netlist.
 
 ## Before you start
 

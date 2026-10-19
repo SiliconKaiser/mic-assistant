@@ -21,7 +21,7 @@ The device only captures and plays audio. A server on a computer at home bridges
 
 | Area | State |
 | --- | --- |
-| Prototype hardware | Parts ordered 2026-10-18; schematic and assembly guide ready |
+| Prototype hardware | Parts ordered 2026-10-18; netlist and assembly guide ready |
 | Firmware | Not started |
 | Server | Not started |
 | PCB | Not started; waits on a working prototype |
@@ -32,7 +32,7 @@ The device only captures and plays audio. A server on a computer at home bridges
 | Path | Contents |
 | --- | --- |
 | [docs/](docs/) | Architecture, device–server protocol, design decisions |
-| [hardware/prototype/](hardware/prototype/) | Breadboard build: schematic, netlist, assembly guide, BOMs |
+| [hardware/prototype/](hardware/prototype/) | Breadboard build: netlist, assembly guide, BOMs |
 | [hardware/pcb/](hardware/pcb/) | Custom board (KiCad), later |
 | [hardware/datasheets/](hardware/datasheets/) | Index of component datasheets (PDFs kept local) |
 | [firmware/](firmware/) | ESP-IDF firmware for the ESP32-S3 |

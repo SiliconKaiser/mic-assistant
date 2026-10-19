@@ -2,10 +2,6 @@
 
 Breadboard build: plain XIAO ESP32-S3, Adafruit PDM mic, MAX98357A amp, NeoPixel, Pololu latch and 5 V regulator, 4×AAA clip.
 
-![Schematic](schematic.svg)
-
-Pins with the same net name are connected. Regenerate the drawing with `python hardware/prototype/schematic.py` (needs `schemdraw` and `matplotlib`).
-
 ## Nets
 
 | Net | Connects | Notes |
