@@ -1,0 +1,15 @@
+menu "mic-assistant"
+
+    choice BOARD
+        prompt "Target board"
+        default BOARD_PROTOTYPE
+        help
+            Normally set by `idf.py -DBOARD=<name>` via boards/<name>/sdkconfig.defaults.
+
+        config BOARD_PROTOTYPE
+            bool "Breadboard prototype (XIAO ESP32-S3 + Pololu latch)"
+        config BOARD_PCB
+            bool "Custom PCB"
+    endchoice
+
+endmenu

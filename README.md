@@ -22,7 +22,7 @@ The device only captures and plays audio. A server on a computer at home bridges
 | Area | State |
 | --- | --- |
 | Prototype hardware | Parts ordered 2026-10-18; netlist and assembly guide ready |
-| Firmware | Not started |
+| Firmware | ESP-IDF skeleton builds (power, battery, boot timing) |
 | Server | Not started |
 | PCB | Not started; waits on a working prototype |
 | Enclosure | Not started; 3D printed, after the prototype |

@@ -1,0 +1,21 @@
+# Settings shared by every board.
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# Console over the S3's built-in USB (no UART chip on either board)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# --- Fast boot (see ESP-IDF "Speed Optimization > Reducing startup time") ---
+CONFIG_BOOTLOADER_LOG_LEVEL_NONE=y
+CONFIG_BOOTLOADER_SKIP_VALIDATE_ON_POWER_ON=y
+# App logs: warnings by default, but INFO can be turned on at runtime
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+# Not set on purpose: CONFIG_BOOT_ROM_LOG_ALWAYS_OFF burns an eFuse (irreversible).
+
+# PSRAM present on both boards; skip the slow (~1 s per 4 MB) boot memory test
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MEMTEST=n
+
+CONFIG_COMPILER_OPTIMIZATION_PERF=y

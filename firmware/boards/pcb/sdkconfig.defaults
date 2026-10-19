@@ -1,0 +1,2 @@
+# Custom PCB. Fill in once the ESP32-S3 module is chosen (flash size, PSRAM mode).
+CONFIG_BOARD_PCB=y
