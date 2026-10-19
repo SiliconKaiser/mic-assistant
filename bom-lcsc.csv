@@ -1,6 +1,0 @@
-﻿Quantity,LCSC Part Number,Manufacture Part Number,Manufacturer,Description,Customer Remark
-2,C106613,ERR1AM102F12OT,AISHI,"1000uF 10V radial electrolytic, 8x12mm",REQUIRED - 5V rail bulk cap (kit likely tops out at 470uF)
-1,C530531,GSPK2307P-8R1W,INGHAi,"Speaker 8 ohm, 0.5W rated / 1W max, 23mm",REQUIRED - speaker
-3,C2337,2.54-1*40PStraight pin,BOOMELE,Pin header 1x40 2.54mm,REQUIRED - headers for XIAO and breakouts
-3,C698892,1N5817,Yangjie,Schottky 20V 1A DO-41,RECOMMENDED - skip if your kit has 1N5817 or 1N5819
-1,C22447091,GSPK2810BOX-4R3W-L100S-2.0T,INGHAi,"Enclosed box speaker 4 ohm 3W, 28x28mm",RECOMMENDED - much fuller sound
