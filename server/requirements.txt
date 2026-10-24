@@ -1,1 +1,2 @@
 websockets>=14
+google-genai>=1.30

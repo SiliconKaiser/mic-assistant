@@ -27,21 +27,25 @@ constexpr float LIMIT = 23000;
 // with audio (or stale DMA data) playing pops.
 constexpr int SILENCE_CHUNKS = 3;
 
-void write(i2s_chan_handle_t tx, const int16_t *s, size_t n)
+// One stream at a time, from one task. Buffers are static, not on the stack: at 48 kHz they're
+// ~1 KB each, and app_main's stack overflowed with them there (2026-10-24).
+const int16_t zeros[MAX_CHUNK] = {};
+int16_t chunk[MAX_CHUNK];
+i2s_chan_handle_t tx = nullptr;
+size_t chunk_len = 0;
+size_t fade_len = 0;
+size_t position = 0;  // samples written since begin(), for the fade-in
+
+void write_raw(const int16_t *s, size_t n)
 {
     size_t written = 0;
     i2s_channel_write(tx, s, n * sizeof(int16_t), &written, portMAX_DELAY);
 }
 
-// Static, not on the stack: at 48 kHz these are ~1 KB each, and app_main's stack overflowed
-// with them there (2026-10-24). play() is only ever called from one task.
-const int16_t zeros[MAX_CHUNK] = {};
-int16_t chunk[MAX_CHUNK];
-
-void write_silence(i2s_chan_handle_t tx, size_t len)
+void write_silence()
 {
     for (int i = 0; i < SILENCE_CHUNKS; i++) {
-        write(tx, zeros, len);
+        write_raw(zeros, chunk_len);
     }
 }
 
@@ -54,30 +58,29 @@ void set_sd(bool on)
 
 }  // namespace
 
-bool play(const int16_t *samples, size_t n, float gain, uint32_t sample_rate)
+bool begin(uint32_t sample_rate)
 {
     // The amp's supply only exists while the latch is on; never drive its pins otherwise.
     if (!power::vsw_present()) {
         ESP_LOGW(TAG, "amp has no power (latch off); not playing");
         return false;
     }
-    if (n == 0) {
-        return true;
-    }
     if (sample_rate < 8000 || sample_rate > MAX_RATE) {
         ESP_LOGE(TAG, "unsupported sample rate %lu", (unsigned long)sample_rate);
         return false;
     }
-    const size_t chunk_len = sample_rate / 100;
-    const size_t fade = sample_rate / FADE_DIV;
+    chunk_len = sample_rate / 100;
+    fade_len = sample_rate / FADE_DIV;
+    position = 0;
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
     chan_cfg.dma_desc_num = DMA_DESCS;
     chan_cfg.dma_frame_num = chunk_len;
-    chan_cfg.auto_clear = true;  // send zeros, not stale data, if writes fall behind
-    i2s_chan_handle_t tx = nullptr;
+    // Send zeros, not stale data, if writes fall behind (e.g. a streamed reply arriving late).
+    chan_cfg.auto_clear = true;
     if (i2s_new_channel(&chan_cfg, &tx, nullptr) != ESP_OK) {
         ESP_LOGE(TAG, "no I2S channel");
+        tx = nullptr;
         return false;
     }
     i2s_std_config_t std_cfg = {
@@ -95,31 +98,62 @@ bool play(const int16_t *samples, size_t n, float gain, uint32_t sample_rate)
     if (i2s_channel_init_std_mode(tx, &std_cfg) != ESP_OK || i2s_channel_enable(tx) != ESP_OK) {
         ESP_LOGE(TAG, "I2S setup failed");
         i2s_del_channel(tx);
+        tx = nullptr;
         power::release_amp_pins();
         return false;
     }
 
-    write_silence(tx, chunk_len);
+    write_silence();
     set_sd(true);
+    return true;
+}
 
+void write(const int16_t *samples, size_t n, float gain, bool last)
+{
+    if (!tx) {
+        return;
+    }
     for (size_t pos = 0; pos < n; pos += chunk_len) {
         size_t len = std::min(chunk_len, n - pos);
         for (size_t i = 0; i < len; i++) {
             size_t k = pos + i;
-            float level = std::min({1.0f, float(k) / fade, float(n - 1 - k) / fade});
+            float level = std::min(1.0f, float(position + k) / fade_len);
+            if (last) {
+                level = std::min(level, float(n - 1 - k) / fade_len);
+            }
             chunk[i] = int16_t(std::clamp(samples[k] * gain * level, -LIMIT, LIMIT));
         }
-        write(tx, chunk, len);
+        write_raw(chunk, len);
     }
+    position += n;
+}
 
-    write_silence(tx, chunk_len);
+void end()
+{
+    if (!tx) {
+        return;
+    }
+    write_silence();
     // Writes return once queued; wait for the DMA to drain before shutting the amp down.
     vTaskDelay(pdMS_TO_TICKS(DMA_DESCS * 10 + 10));
     set_sd(false);
 
     i2s_channel_disable(tx);
     i2s_del_channel(tx);
+    tx = nullptr;
     power::release_amp_pins();
+}
+
+bool play(const int16_t *samples, size_t n, float gain, uint32_t sample_rate)
+{
+    if (n == 0) {
+        return true;
+    }
+    if (!begin(sample_rate)) {
+        return false;
+    }
+    write(samples, n, gain, true);
+    end();
     return true;
 }
 

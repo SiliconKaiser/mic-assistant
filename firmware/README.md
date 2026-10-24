@@ -2,7 +2,7 @@
 
 ESP-IDF firmware for the ESP32-S3. One codebase, built per board.
 
-Current state: push-to-talk over Wi-Fi. It holds power, lights the NeoPixel, starts the mic within ~75 ms of the press, joins Wi-Fi and streams the turn to the home server ([docs/protocol.md](../docs/protocol.md)) while S1 is held, plays the server's reply, then powers itself off. On USB it waits for the next S1 press instead. The server is an echo for now; Gemini is next.
+Current state: push-to-talk over Wi-Fi. It holds power, lights the NeoPixel, starts the mic within ~75 ms of the press, joins Wi-Fi and streams the turn to the home server ([docs/protocol.md](../docs/protocol.md)) while S1 is held, plays the server's reply, then powers itself off. On USB it waits for the next S1 press instead. The server bridges to Gemini Live (or echoes, for testing). The reply plays while it streams in.
 
 ## Build and flash
 

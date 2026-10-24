@@ -1,6 +1,6 @@
 # Server
 
-Runs on a computer at home. Status: speaks the device protocol ([../docs/protocol.md](../docs/protocol.md)) with an **echo** backend: each turn is saved as a .wav and sent back as the reply. The Gemini Live bridge replaces the echo next.
+Runs on a computer at home. Status: speaks the device protocol ([../docs/protocol.md](../docs/protocol.md)) with two backends: **gemini** (Gemini Live, the default when `GEMINI_API_KEY` is set) and **echo** (sends each turn back; for testing the device path). Each turn is also saved as a .wav. `--list-live-models` shows which Live models the key can use.
 
 ## Run
 
@@ -9,7 +9,7 @@ python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requireme
 server/.venv/bin/python server/mic_server.py        # reads local/server.env
 ```
 
-`local/server.env` (not in git) holds `MIC_DEVICE_TOKEN` (must match the firmware's `secrets.h`) and `MIC_PORT` (8765). Turn audio is saved to `local/server-recordings/`. On macOS, allow Python's incoming connections if the firewall asks.
+`local/server.env` (not in git) holds `MIC_DEVICE_TOKEN` (must match the firmware's `secrets.h`), `MIC_PORT` (8765) and `GEMINI_API_KEY`; see the docstring in [mic_server.py](mic_server.py) for the rest. Turn audio is saved to `local/server-recordings/`. On macOS, allow Python's incoming connections if the firewall asks.
 
 ## Scope
 

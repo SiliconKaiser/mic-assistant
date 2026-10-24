@@ -31,6 +31,13 @@ const char *TAG = "main";
 constexpr int MIN_RECORD_MS = 2000;
 // The button must read released this long before recording stops (contact bounce).
 constexpr int RELEASE_MS = 50;
+// Keep recording this long after the release: people let go while finishing the last word
+// (bench, 2026-10-24: full speech level in the last 100 ms, and Gemini's transcript lost the word).
+constexpr int RELEASE_TAIL_MS = 250;
+// Reply audio to buffer before playback starts, so network jitter doesn't starve the speaker.
+constexpr int PREBUFFER_MS = 150;
+// Give up on a reply that stops arriving mid-way for this long.
+constexpr int REPLY_STALL_MS = 5000;
 // Every recording starts with a ~100 ms mic start-up burst; it's never sent or measured.
 constexpr size_t SETTLE_SAMPLES = mic::SAMPLE_RATE / 10;
 // Speech peaks ~1400 of 32767 at arm's length; 16x brings them to ~70% of full scale.
@@ -174,25 +181,60 @@ extern "C" void app_main()
             bool min_done = esp_timer_get_time() - listen_us >= MIN_RECORD_MS * 1000LL;
             released_ms = (!power::ptt_pressed() && min_done) ? released_ms + 10 : 0;
         }
+        int64_t release_us = esp_timer_get_time();
+        if (listening) {
+            delay_ms(RELEASE_TAIL_MS);
+        }
         mic::stop();
         released = true;
-        int64_t release_us = esp_timer_get_time();
         led::set(30, 20, 0);  // amber: waiting for the reply
 
         // Wait for the uplink to finish sending, then for the reply.
         while (listening && uplink_result == 0) {
             delay_ms(10);
         }
-        bool replied = uplink_result == 1 && session::wait_reply(REPLY_TIMEOUT_MS);
-        int64_t reply_us = esp_timer_get_time();
+        // Play the reply while it streams in: start once PREBUFFER_MS has arrived (or all of it),
+        // then keep feeding the amp; amp::write blocks, which paces this loop to real time.
+        bool replied = uplink_result == 1 && session::wait_reply_start(REPLY_TIMEOUT_MS);
+        int64_t play_us = 0;
+        int64_t reply_us = 0;
+        size_t played = 0;
         if (replied) {
+            const int rate = std::max(1, session::reply_sample_rate());
+            const size_t prebuffer = size_t(rate) * PREBUFFER_MS / 1000;
+            const size_t block = size_t(rate) / 50;  // 20 ms per write
+            while (!session::reply_complete() && !session::failed() && session::reply_sample_count() < prebuffer) {
+                delay_ms(5);
+            }
+            bool speaking = amp::begin(rate);
             led::set(20, 0, 20);  // purple: playing the reply
-            size_t n = session::reply_sample_count();
-            int rate = session::reply_sample_rate();
-            if (amp::play(session::reply_samples(), n, 1.0f, rate)) {
+            play_us = esp_timer_get_time();
+            int64_t last_audio_us = play_us;
+            while (true) {
+                bool done = session::reply_complete();  // read before the count: then the count is final
+                size_t available = session::reply_sample_count();
+                if (done && !reply_us) {
+                    reply_us = esp_timer_get_time();
+                }
+                if (played < available) {
+                    size_t n = std::min(block, available - played);
+                    if (speaking) {
+                        amp::write(session::reply_samples() + played, n, 1.0f, done && played + n == available);
+                    }
+                    played += n;
+                    last_audio_us = esp_timer_get_time();
+                } else if (done || session::failed() ||
+                           esp_timer_get_time() - last_audio_us > REPLY_STALL_MS * 1000LL) {
+                    break;  // finished, or the link dropped / went quiet mid-reply
+                } else {
+                    delay_ms(5);  // reply running behind playback
+                }
+            }
+            if (speaking) {
+                amp::end();
                 char msg[112];
                 snprintf(msg, sizeof(msg), R"({"type":"playback_stopped","reply_id":%d,"played_ms":%d,"reason":"done"})",
-                         session::reply_id(), rate ? int(n * 1000 / rate) : 0);
+                         session::reply_id(), int(played * 1000 / rate));
                 session::send_text(msg);
             }
             led::set(0, 0, 0);
@@ -214,10 +256,10 @@ extern "C" void app_main()
                  s.arp_misses, ms(s.connected));
         log_span("uplink", SETTLE_SAMPLES, mic::sample_count());
         if (replied) {
-            ESP_LOGI(TAG, "reply %d: %d ms at %d Hz; release -> first reply audio %d ms, -> complete %d ms",
-                     session::reply_id(), int(session::reply_sample_count() * 1000 / std::max(1, session::reply_sample_rate())),
+            ESP_LOGI(TAG, "reply %d: %d ms at %d Hz; release -> first reply audio %d, playing %d, all arrived %d ms",
+                     session::reply_id(), int(played * 1000 / std::max(1, session::reply_sample_rate())),
                      session::reply_sample_rate(), ms(session::reply_first_audio_us() - release_us),
-                     ms(reply_us - release_us));
+                     ms(play_us - release_us), ms(reply_us - release_us));
         } else {
             ESP_LOGE(TAG, "no reply (%s)", uplink_result == 1 ? "server didn't answer" : "couldn't reach the server");
         }

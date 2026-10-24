@@ -14,10 +14,14 @@ bool open(int timeout_ms);
 bool send_text(const char *json);
 bool send_audio(const int16_t *samples, size_t n);
 
-// Wait for a complete reply (reply_end). False on timeout, an `error` message, or disconnect.
-bool wait_reply(int timeout_ms);
+// Wait for a reply to start (reply_start). False on timeout, an `error` message, or disconnect.
+bool wait_reply_start(int timeout_ms);
+// The reply has fully arrived (reply_end), or the session failed.
+bool reply_complete();
+bool failed();
 
-// The last reply's audio, kept until the next open().
+// The last reply's audio, kept until the next open(). It grows while the reply streams in:
+// play up to reply_sample_count() and poll for more.
 const int16_t *reply_samples();
 size_t reply_sample_count();
 int reply_sample_rate();

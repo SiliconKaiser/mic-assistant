@@ -23,6 +23,7 @@ const char *TAG = "session";
 constexpr EventBits_t CONNECTED = BIT0;
 constexpr EventBits_t REPLY_DONE = BIT1;
 constexpr EventBits_t FAILED = BIT2;
+constexpr EventBits_t REPLY_STARTED = BIT3;
 
 // Replies can come at up to 24 kHz (the realtime AIs' output rate). 30 s fits easily in PSRAM.
 constexpr size_t REPLY_CAPACITY_BYTES = 24000 * 30 * sizeof(int16_t);
@@ -32,13 +33,13 @@ constexpr int WS_BUFFER = 4096;
 esp_websocket_client_handle_t client = nullptr;
 EventGroupHandle_t events = nullptr;
 
-// Written by the WebSocket task, read by the caller after REPLY_DONE.
+// Written by the WebSocket task; read by the player while the reply streams in.
 uint8_t *reply = nullptr;
-size_t reply_bytes = 0;
-int reply_rate = 0;
-int current_reply = 0;
-bool in_reply = false;
-int64_t first_audio_us = 0;
+std::atomic<size_t> reply_bytes{0};
+std::atomic<int> reply_rate{0};
+std::atomic<int> current_reply{0};
+std::atomic<bool> in_reply{false};
+std::atomic<int64_t> first_audio_us{0};
 
 Timing times{};
 
@@ -63,6 +64,7 @@ void on_message(const char *json)
         reply_bytes = 0;
         first_audio_us = 0;
         in_reply = true;
+        xEventGroupSetBits(events, REPLY_STARTED);
     } else if (!strcmp(type, "reply_end")) {
         in_reply = false;
         xEventGroupSetBits(events, REPLY_DONE);
@@ -85,9 +87,10 @@ void on_data(const esp_websocket_event_data_t *d)
         if (first_audio_us == 0) {
             first_audio_us = esp_timer_get_time();
         }
-        size_t n = std::min<size_t>(d->data_len, REPLY_CAPACITY_BYTES - reply_bytes);
-        memcpy(reply + reply_bytes, d->data_ptr, n);
-        reply_bytes += n;
+        size_t at = reply_bytes;
+        size_t n = std::min<size_t>(d->data_len, REPLY_CAPACITY_BYTES - at);
+        memcpy(reply + at, d->data_ptr, n);
+        reply_bytes = at + n;  // publish only after the copy, for the player
     } else if (d->op_code == 0x1) {  // text: JSON control message, possibly in pieces
         if (d->payload_offset == 0) {
             text_len = 0;
@@ -145,7 +148,7 @@ bool open(int timeout_ms)
     times.open = esp_timer_get_time();
     times.arp_misses = wifi::warm_arp(secrets::SERVER_HOST, 1000);
     times.arp_done = esp_timer_get_time();
-    xEventGroupClearBits(events, CONNECTED | REPLY_DONE | FAILED);
+    xEventGroupClearBits(events, CONNECTED | REPLY_DONE | FAILED | REPLY_STARTED);
     reply_bytes = 0;
     reply_rate = 0;
     in_reply = false;
@@ -192,11 +195,21 @@ bool send_audio(const int16_t *samples, size_t n)
                                                    int(n * sizeof(int16_t)), pdMS_TO_TICKS(2000)) >= 0;
 }
 
-bool wait_reply(int timeout_ms)
+bool wait_reply_start(int timeout_ms)
 {
     EventBits_t bits =
-        xEventGroupWaitBits(events, REPLY_DONE | FAILED, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
-    return bits & REPLY_DONE;
+        xEventGroupWaitBits(events, REPLY_STARTED | FAILED, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    return bits & REPLY_STARTED;
+}
+
+bool reply_complete()
+{
+    return xEventGroupGetBits(events) & REPLY_DONE;
+}
+
+bool failed()
+{
+    return xEventGroupGetBits(events) & FAILED;
 }
 
 const int16_t *reply_samples()
