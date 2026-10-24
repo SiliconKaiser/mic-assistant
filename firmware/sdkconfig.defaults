@@ -24,3 +24,11 @@ CONFIG_COMPILER_OPTIMIZATION_PERF=y
 # that way. See README "C++ conventions".
 CONFIG_COMPILER_CXX_EXCEPTIONS=n
 CONFIG_COMPILER_CXX_RTTI=n
+
+# Wi-Fi alone takes the app to ~900 KB; the default 1 MB app partition is too tight.
+# (Needs >= 2 MB flash: both boards have more.)
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# app_main runs the whole push-to-talk flow (protocol messages, snprintf, playback); the 3.5 KB
+# default overflowed. Logged as "stack overflow in task main".
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

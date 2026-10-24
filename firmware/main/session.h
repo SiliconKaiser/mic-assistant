@@ -1,0 +1,30 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+// One WebSocket session with the home server, per docs/protocol.md. (Not named `link`: that
+// collides with POSIX link().)
+namespace session {
+
+// Connect to the server in secrets.h. False on failure or timeout. Call after Wi-Fi is up.
+bool open(int timeout_ms);
+
+// Send a JSON control message, or user audio (16-bit mono PCM) as a binary frame.
+bool send_text(const char *json);
+bool send_audio(const int16_t *samples, size_t n);
+
+// Wait for a complete reply (reply_end). False on timeout, an `error` message, or disconnect.
+bool wait_reply(int timeout_ms);
+
+// The last reply's audio, kept until the next open().
+const int16_t *reply_samples();
+size_t reply_sample_count();
+int reply_sample_rate();
+int reply_id();
+// esp_timer time (us since app start) when reply audio started arriving, or 0.
+int64_t reply_first_audio_us();
+
+void close();
+
+}  // namespace session

@@ -1,21 +1,26 @@
-// Skeleton push-to-talk flow: hold power, start listening as early as possible, record while
-// the button is held, log a summary, power off. Wi-Fi and the server protocol come next.
+// Push-to-talk flow: hold power, start listening as early as possible, stream the turn to the
+// home server over Wi-Fi while the button is held, play the server's reply, power off.
+// Protocol: docs/protocol.md. The server is an echo for now (server/mic_server.py).
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 
 #include "amp.h"
 #include "battery.h"
 #include "board.h"
-#include "dump.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led.h"
 #include "mic.h"
 #include "power.h"
+#include "session.h"
+#include "wifi.h"
 
 namespace {
 
@@ -26,10 +31,23 @@ const char *TAG = "main";
 constexpr int MIN_RECORD_MS = 2000;
 // The button must read released this long before recording stops (contact bounce).
 constexpr int RELEASE_MS = 50;
-// Every recording starts with a ~100 ms mic start-up burst; leave it out of levels and playback.
+// Every recording starts with a ~100 ms mic start-up burst; it's never sent or measured.
 constexpr size_t SETTLE_SAMPLES = mic::SAMPLE_RATE / 10;
 // Speech peaks ~1400 of 32767 at arm's length; 16x brings them to ~70% of full scale.
-constexpr float PLAYBACK_GAIN = 16;
+// Applied to the uplink (docs/protocol.md); automatic gain control later.
+constexpr float UPLINK_GAIN = 16;
+constexpr size_t UPLINK_CHUNK = mic::SAMPLE_RATE / 10;  // 100 ms per frame; the backlog goes out fast
+
+constexpr int WIFI_TIMEOUT_MS = 10000;  // from boot; a cold association normally takes 1-3 s
+constexpr int WS_TIMEOUT_MS = 3000;
+constexpr int REPLY_TIMEOUT_MS = 15000;  // after release; the AI may call tools first
+
+// Shared between app_main and the uplink task for one run.
+std::atomic<bool> released{false};
+std::atomic<int> uplink_result{0};  // 0 running, 1 turn sent, -1 failed
+int64_t ws_open_us = 0;
+int battery_mv = 0;
+char device_id[16];
 
 void delay_ms(int ms)
 {
@@ -61,15 +79,54 @@ void log_span(const char *label, size_t from, size_t to)
              int(from * 1000 / mic::SAMPLE_RATE), int(to * 1000 / mic::SAMPLE_RATE), mean, peak, rms);
 }
 
-void log_levels()
+// Connects, then streams the recording from the PSRAM buffer as it grows: first the backlog
+// captured while Wi-Fi came up, then live audio, until the button is released.
+void uplink_task(void *)
 {
-    size_t n = mic::sample_count();
-    const size_t half_s = mic::SAMPLE_RATE / 2;
-    ESP_LOGI(TAG, "recorded %d ms (levels of 32767)", int(n * 1000 / mic::SAMPLE_RATE));
-    log_span("start", 0, SETTLE_SAMPLES);
-    log_span("first", SETTLE_SAMPLES, SETTLE_SAMPLES + half_s);
-    log_span("last", n > half_s ? n - half_s : 0, n);
-    log_span("all", SETTLE_SAMPLES, n);
+    bool ok = wifi::wait_connected(WIFI_TIMEOUT_MS) && session::open(WS_TIMEOUT_MS);
+    if (ok) {
+        ws_open_us = esp_timer_get_time();
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 R"({"type":"hello","v":1,"device_id":"%s","firmware":"dev","battery_mv":%d})", device_id,
+                 battery_mv);
+        ok = session::send_text(msg) && session::send_text(R"({"type":"turn_start","turn_id":1})");
+    }
+
+    size_t sent = SETTLE_SAMPLES;
+    int16_t chunk[UPLINK_CHUNK];
+    while (ok) {
+        bool done = released;  // read before the count: after release the count is final
+        size_t available = mic::sample_count();
+        if (sent < available) {
+            size_t n = std::min(UPLINK_CHUNK, available - sent);
+            const int16_t *src = mic::samples() + sent;
+            for (size_t i = 0; i < n; i++) {
+                chunk[i] = int16_t(std::clamp(src[i] * UPLINK_GAIN, -32768.0f, 32767.0f));
+            }
+            ok = session::send_audio(chunk, n);
+            sent += n;
+        } else if (done) {
+            break;
+        } else {
+            delay_ms(10);
+        }
+    }
+    if (ok) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), R"({"type":"turn_end","turn_id":1,"audio_ms":%d})",
+                 int((sent - SETTLE_SAMPLES) * 1000 / mic::SAMPLE_RATE));
+        ok = session::send_text(msg);
+    }
+    uplink_result = ok ? 1 : -1;
+    vTaskDelete(nullptr);
+}
+
+void show_error()
+{
+    led::set(40, 0, 0);
+    delay_ms(1500);
+    led::set(0, 0, 0);
 }
 
 }  // namespace
@@ -85,50 +142,79 @@ extern "C" void app_main()
     // slow motion measures press-to-code time (2026-10-24: ~58 ms; Arduino was ~130 ms).
     led::init();
     led::set(0, 0, 40);
-    int64_t led_us = esp_timer_get_time();
+
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(device_id, sizeof(device_id), "mic-%02x%02x%02x", mac[3], mac[4], mac[5]);
 
     esp_log_level_set("*", ESP_LOG_INFO);
     for (int run = 1;; run++) {
-        // Listen before anything slow (Wi-Fi, later): the goal is under 300 ms from press to
-        // listening, with audio buffered in PSRAM until the network is up. Green = audio arriving.
+        // Listen before anything slow: the goal is under 300 ms from press to listening, with
+        // audio buffered in PSRAM until the network is up. Green = audio arriving.
         bool listening =
             mic::start(xTaskGetCurrentTaskHandle()) && ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500)) > 0;
         led::set(listening ? 0 : 40, listening ? 40 : 0, 0);  // red if the mic never delivered
+        int64_t listen_us = esp_timer_get_time();
+
+        // Then the network, in the background. Wi-Fi stays up across runs on USB.
+        battery_mv = battery::read_mv();
+        wifi::start();
+        released = false;
+        uplink_result = 0;
+        ws_open_us = 0;
+        if (listening) {
+            xTaskCreate(uplink_task, "uplink", 8192, nullptr, 5, nullptr);
+        }
 
         // Push-to-talk: record while S1 is held. On battery it's still held from the press that
         // powered us on.
-        int64_t start_us = esp_timer_get_time();
         int released_ms = 0;
         while (listening && released_ms < RELEASE_MS && mic::sample_count() < mic::capacity()) {
             delay_ms(10);
-            bool min_done = esp_timer_get_time() - start_us >= MIN_RECORD_MS * 1000LL;
+            bool min_done = esp_timer_get_time() - listen_us >= MIN_RECORD_MS * 1000LL;
             released_ms = (!power::ptt_pressed() && min_done) ? released_ms + 10 : 0;
         }
         mic::stop();
-        led::set(0, 0, 0);
+        released = true;
+        int64_t release_us = esp_timer_get_time();
+        led::set(30, 20, 0);  // amber: waiting for the reply
 
-        // Logged at the end because USB drops everything from the first ~1.5 s after a reset.
-        ESP_LOGI(TAG, "run %d  board=%s  since app start: app_main %lld ms, LED %lld ms, first audio %lld ms", run,
-                 board::NAME, boot_us / 1000, led_us / 1000, mic::first_audio_us() / 1000);
-        if (listening) {
-            log_levels();
-        } else {
-            ESP_LOGE(TAG, "mic delivered no audio");
+        // Wait for the uplink to finish sending, then for the reply.
+        while (listening && uplink_result == 0) {
+            delay_ms(10);
         }
-        ESP_LOGI(TAG, "battery %d mV", battery::read_mv());
-
-        // Skeleton: send the recording to the computer (if on USB), then play it back (purple)
-        // as an on-device audio check. Both skip the start-up burst.
-        size_t n = mic::sample_count();
-        if (listening && n > SETTLE_SAMPLES) {
-            dump::wav(mic::samples() + SETTLE_SAMPLES, n - SETTLE_SAMPLES, mic::SAMPLE_RATE);
-            led::set(20, 0, 20);
-            if (amp::play(mic::samples() + SETTLE_SAMPLES, n - SETTLE_SAMPLES, PLAYBACK_GAIN)) {
-                ESP_LOGI(TAG, "played back %d ms at %.0fx", int((n - SETTLE_SAMPLES) * 1000 / mic::SAMPLE_RATE),
-                         PLAYBACK_GAIN);
+        bool replied = uplink_result == 1 && session::wait_reply(REPLY_TIMEOUT_MS);
+        int64_t reply_us = esp_timer_get_time();
+        if (replied) {
+            led::set(20, 0, 20);  // purple: playing the reply
+            size_t n = session::reply_sample_count();
+            int rate = session::reply_sample_rate();
+            if (amp::play(session::reply_samples(), n, 1.0f, rate)) {
+                char msg[112];
+                snprintf(msg, sizeof(msg), R"({"type":"playback_stopped","reply_id":%d,"played_ms":%d,"reason":"done"})",
+                         session::reply_id(), rate ? int(n * 1000 / rate) : 0);
+                session::send_text(msg);
             }
             led::set(0, 0, 0);
+        } else {
+            show_error();
         }
+        session::close();
+
+        // Logged at the end because USB drops everything from the first ~1.5 s after a reset.
+        auto ms = [](int64_t us) { return us ? int(us / 1000) : -1; };
+        ESP_LOGI(TAG, "run %d  %s  since app start: app_main %d, listening %d, Wi-Fi %d, WebSocket %d ms", run,
+                 device_id, ms(boot_us), ms(listen_us), ms(wifi::connected_us()), ms(ws_open_us));
+        log_span("uplink", SETTLE_SAMPLES, mic::sample_count());
+        if (replied) {
+            ESP_LOGI(TAG, "reply %d: %d ms at %d Hz; release -> first reply audio %d ms, -> complete %d ms",
+                     session::reply_id(), int(session::reply_sample_count() * 1000 / std::max(1, session::reply_sample_rate())),
+                     session::reply_sample_rate(), ms(session::reply_first_audio_us() - release_us),
+                     ms(reply_us - release_us));
+        } else {
+            ESP_LOGE(TAG, "no reply (%s)", uplink_result == 1 ? "server didn't answer" : "couldn't reach the server");
+        }
+        ESP_LOGI(TAG, "battery %d mV", battery_mv);
 
         power::off();
 

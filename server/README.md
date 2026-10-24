@@ -1,6 +1,18 @@
 # Server
 
-Runs on a computer at home. Not started.
+Runs on a computer at home. Status: speaks the device protocol ([../docs/protocol.md](../docs/protocol.md)) with an **echo** backend: each turn is saved as a .wav and sent back as the reply. The Gemini Live bridge replaces the echo next.
+
+## Run
+
+```sh
+python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requirements.txt   # once
+server/.venv/bin/python server/mic_server.py        # reads local/server.env
+```
+
+`local/server.env` (not in git) holds `MIC_DEVICE_TOKEN` (must match the firmware's `secrets.h`) and `MIC_PORT` (8765). Turn audio is saved to `local/server-recordings/`. On macOS, allow Python's incoming connections if the firewall asks.
+
+## Scope
+
 
 - Accepts audio streams from devices on the local network
 - Bridges them to a realtime voice-to-voice AI: **Google's Gemini Live API** (formerly the Multimodal Live API). A speech-to-text → LLM → text-to-speech pipeline stays the fallback

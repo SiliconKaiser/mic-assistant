@@ -2,11 +2,13 @@
 
 ESP-IDF firmware for the ESP32-S3. One codebase, built per board.
 
-Current state: a push-to-talk skeleton. It holds power, lights the NeoPixel, starts the mic within ~75 ms of the press, records into PSRAM while S1 is held, logs levels, then powers itself off. On USB it waits for the next S1 press instead. Speaker output, Wi-Fi and the server protocol are next.
+Current state: push-to-talk over Wi-Fi. It holds power, lights the NeoPixel, starts the mic within ~75 ms of the press, joins Wi-Fi and streams the turn to the home server ([docs/protocol.md](../docs/protocol.md)) while S1 is held, plays the server's reply, then powers itself off. On USB it waits for the next S1 press instead. The server is an echo for now; Gemini is next.
 
 ## Build and flash
 
 Requires ESP-IDF v5.3 (installed at `~/Projects/esp-idf/esp-idf`).
+
+First time: copy [main/secrets.example.h](main/secrets.example.h) to `main/secrets.h` (ignored by git) and fill in the Wi-Fi network (2.4 GHz), the server address and the device token from `local/server.env`. The build stops with a message until it's filled in.
 
 ```sh
 cd firmware
@@ -17,6 +19,8 @@ idf.py -B build-prototype -DBOARD=prototype -p /dev/cu.usbmodem* flash monitor
 ```
 
 If flashing fails, hold the XIAO's **B** (boot) button while plugging in USB, then retry.
+
+If linking fails with `multiple definition of 'esp_wifi_connect'` (or other undefined/duplicate symbols from prebuilt libraries), the ESP-IDF checkout's submodules don't match it: `git submodule status` in the IDF directory shows them with a `+`. Fix with `git submodule update --init <path>` for the affected ones (2026-10-24: `esp_wifi/lib`, `esp_phy/lib`, `heap/tlsf`, `esp_coex/lib` were off).
 
 Each board gets its own build directory and `sdkconfig.<board>`, so switching boards never mixes settings.
 
@@ -39,7 +43,11 @@ To add a board: create `boards/<name>/sdkconfig.defaults`, add a `CONFIG_BOARD_<
 | [main/battery.cpp](main/battery.cpp) | Battery voltage through the divider (ADC calibrated; divider not yet) |
 | [main/led.cpp](main/led.cpp) | Status NeoPixel via the RMT peripheral |
 | [main/mic.cpp](main/mic.cpp) | PDM mic on I2S0 into a 30 s PSRAM buffer, with a DC-blocking high-pass |
-| [main/main.cpp](main/main.cpp) | Entry point (`extern "C" app_main`): the push-to-talk flow |
+| [main/wifi.cpp](main/wifi.cpp) | Joins the network from `secrets.h` in the background |
+| [main/session.cpp](main/session.cpp) | WebSocket to the home server: protocol messages, reply audio into PSRAM |
+| [main/credentials.h](main/credentials.h), [main/secrets.example.h](main/secrets.example.h) | Credentials template; `secrets.h` itself is not in git |
+| [main/dump.cpp](main/dump.cpp) | Debug: send a recording over USB as a .wav ([tools/monitor.py](tools/monitor.py)); not called right now, since the server saves each turn |
+| [main/main.cpp](main/main.cpp) | Entry point (`extern "C" app_main`): the push-to-talk flow, and the uplink task |
 
 ## C++ conventions
 
@@ -60,6 +68,8 @@ The firmware is C++ used as "C with classes": ESP-IDF's C APIs are called direct
 - Timestamps: `esp_timer` starts after the bootloader, so logged times are since app start, not power-on. Measure press-to-X on video (latch LED vs NeoPixel).
 - USB logs from the first ~1.5 s after a reset are lost while the port re-enumerates; log summaries at the end. Only one program can hold the serial port: stop any monitor before flashing.
 - Power-off retries the OFF pulse, because the latch once ignored one on the bench.
+- Network timing (2026-10-24, Mac server on the LAN): from a cold boot Wi-Fi took ~1.85 s and the WebSocket another ~1.3 s (unexplained; it's ~25 ms when Wi-Fi is already up). With Wi-Fi up, release to first reply audio is ~40 ms. Cold-start network time is the latency to work on (fast-connect, docs/protocol.md).
+- Stack: app_main runs the whole flow; the 3.5 KB default overflowed, so it's 8 KB ([sdkconfig.defaults](sdkconfig.defaults)). Large buffers go static or in PSRAM, not on task stacks.
 - Boot-time baseline (Arduino sketch, 2026-10-24): ~100–170 ms from latch on to code running, measured on 30 fps video. The target is under 300 ms to listening.
 - `CONFIG_BOOT_ROM_LOG_ALWAYS_OFF` is left off deliberately. It burns an eFuse, which is permanent.
 - Pin map and wiring: [../hardware/prototype/netlist.md](../hardware/prototype/netlist.md). Arduino bench-test sketches: [assembly guide](../hardware/prototype/assembly-guide.md).
