@@ -8,9 +8,9 @@ namespace secrets {
 inline constexpr const char *WIFI_SSID = "your-network";
 inline constexpr const char *WIFI_PASSWORD = "your-password";
 
-// The home server running server/mic_server.py. An IP for now; the server moves from the Mac to
-// a Linux box later, so an mDNS name (<host>.local) is the plan.
-inline constexpr const char *SERVER_HOST = "192.168.4.101";
+// The home server running server/mic_server.py: the Linux box, at its reserved IP. An IP, not an
+// mDNS name: <host>.local only resolved to IPv6 on this LAN (2026-10-24).
+inline constexpr const char *SERVER_HOST = "192.168.4.102";
 inline constexpr int SERVER_PORT = 8765;
 
 // Must match MIC_DEVICE_TOKEN in the server's env file (local/server.env).

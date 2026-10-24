@@ -24,7 +24,7 @@ ws://<server>:<port>/device
 Authorization: Bearer <device token>
 ```
 
-- The server address, port and token are flashed into the firmware for now (see [Wi-Fi and credentials](#wi-fi-and-credentials)). The server starts on a Mac and moves to a Linux home server later, so prefer an mDNS hostname (`<host>.local`) over a raw IP.
+- The server address, port and token are flashed into the firmware for now (see [Wi-Fi and credentials](#wi-fi-and-credentials)). The server runs on the Linux home server at its reserved IP; `<host>.local` only resolved to IPv6 on this LAN.
 - The device does not wait for any reply from the server before streaming. Saving that round trip is the point.
 - The server rejects a bad token or version by closing the socket: close code `4001` (unauthorized) or `4002` (unsupported protocol version).
 

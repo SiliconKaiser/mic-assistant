@@ -1,0 +1,16 @@
+# systemd user service for the home server (see README "Run on the Linux server").
+# Install: cp server/mic-assistant.service ~/.config/systemd/user/ && systemctl --user enable --now mic-assistant
+# Starts at boot without a login because lingering is on (loginctl enable-linger <user>).
+[Unit]
+Description=mic-assistant home server (device <-> Gemini Live)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/projects/mic-assistant
+ExecStart=%h/projects/mic-assistant/server/.venv/bin/python -u server/mic_server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -34,6 +34,7 @@ import time
 import wave
 
 from websockets.asyncio.server import ServerConnection, serve
+from websockets.exceptions import ConnectionClosed
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 UPLINK_RATE = 16000        # device audio: 16-bit little-endian mono PCM
@@ -138,6 +139,9 @@ class GeminiBackend:
     def store_handle(self, device_id, handle):
         self.handles[device_id] = (handle, time.monotonic())
 
+    def forget_handle(self, device_id):
+        self.handles.pop(device_id, None)
+
     def conversation(self, device_id, sink):
         return GeminiConversation(self, device_id, sink)
 
@@ -202,12 +206,25 @@ class GeminiConversation:
             output_audio_transcription=types.AudioTranscriptionConfig(),
         )
 
+    async def _connect(self, handle):
+        self.cm = self.backend.client.aio.live.connect(model=self.backend.model, config=self._config(handle))
+        self.session = await self.cm.__aenter__()
+
     async def _run(self):
         handle = self.backend.handle_for(self.device_id)
         t0 = time.monotonic()
         try:
-            self.cm = self.backend.client.aio.live.connect(model=self.backend.model, config=self._config(handle))
-            self.session = await self.cm.__aenter__()
+            try:
+                await self._connect(handle)
+            except Exception as e:
+                if not handle:
+                    raise
+                # E.g. 1008 "session is already connected to an existing client": an earlier
+                # connection still holds the conversation. An answer without context beats none.
+                log.warning("%s: resuming failed (%s); starting a new conversation", self.device_id, e)
+                self.backend.forget_handle(self.device_id)
+                handle = None
+                await self._connect(None)
         except Exception as e:
             log.error("%s: Gemini connect failed: %s", self.device_id, e)
             await self.sink.error(f"AI unavailable: {type(e).__name__}")
@@ -290,10 +307,11 @@ class GeminiConversation:
 
 
 class DeviceSession:
-    def __init__(self, ws: ServerConnection, backend, recordings):
+    def __init__(self, ws: ServerConnection, backend, recordings, live):
         self.ws = ws
         self.backend = backend
         self.recordings = recordings
+        self.live = live  # device_id -> its current DeviceSession
         self.device_id = "unknown"
         self.conversation = None
         self.turn_id = None
@@ -325,9 +343,22 @@ class DeviceSession:
                     log.warning("%s: bad JSON: %r", self.device_id, message[:80])
                     continue
                 await self.handle(msg)
+        except ConnectionClosed:
+            pass  # the device went away mid-turn, or a newer connection replaced this one
         finally:
+            if self.live.get(self.device_id) is self:
+                del self.live[self.device_id]
             if self.conversation:
                 await self.conversation.close()
+
+    async def replaced(self):
+        """A newer connection from the same device took over. If the device lost power or reset
+        mid-turn, this connection would otherwise linger until keepalive gives up (~50 s), and its
+        Gemini session blocks resuming the conversation."""
+        conversation, self.conversation = self.conversation, None
+        if conversation:
+            await conversation.close()
+        asyncio.create_task(self.ws.close(4000, "replaced by a newer connection"))  # the peer may be gone
 
     async def handle(self, msg):
         kind = msg.get("type")
@@ -335,6 +366,11 @@ class DeviceSession:
             self.device_id = str(msg.get("device_id", "unknown"))
             log.info("%s: hello at %d ms (firmware %s, battery %s mV)", self.device_id, self.ms(),
                      msg.get("firmware"), msg.get("battery_mv"))
+            stale = self.live.get(self.device_id)
+            if stale is not None and stale is not self:
+                log.info("%s: replacing its earlier connection, still open after %d ms", self.device_id, stale.ms())
+                await stale.replaced()
+            self.live[self.device_id] = self
             self.conversation = self.backend.conversation(self.device_id, self)
             await self.conversation.open()
         elif kind == "turn_start":
@@ -424,6 +460,7 @@ async def main():
     port = int(os.environ.get("MIC_PORT", "8765"))
     recordings = pathlib.Path(os.environ.get("MIC_RECORDINGS", REPO / "local" / "server-recordings"))
     backend = make_backend()
+    live = {}
 
     async def handler(ws: ServerConnection):
         peer = ws.remote_address[0] if ws.remote_address else "?"
@@ -435,7 +472,7 @@ async def main():
             await ws.close(4001, "unauthorized")
             return
         log.info("%s: connected", peer)
-        session = DeviceSession(ws, backend, recordings)
+        session = DeviceSession(ws, backend, recordings, live)
         try:
             await session.run()
         finally:
