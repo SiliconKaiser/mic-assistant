@@ -205,6 +205,13 @@ extern "C" void app_main()
         auto ms = [](int64_t us) { return us ? int(us / 1000) : -1; };
         ESP_LOGI(TAG, "run %d  %s  since app start: app_main %d, listening %d, Wi-Fi %d, WebSocket %d ms", run,
                  device_id, ms(boot_us), ms(listen_us), ms(wifi::connected_us()), ms(ws_open_us));
+        wifi::Timing w = wifi::timing();
+        session::Timing s = session::timing();
+        ESP_LOGI(TAG, "  net (ms since app start): wifi start %d, driver up %d, associated %d (%s), got IP %d | "
+                      "ws open %d, ARP done %d (%d missed), connected %d",
+                 ms(w.start), ms(w.driver_up), ms(w.associated),
+                 wifi::used_cached_ap() ? "cached AP" : "scan", ms(w.got_ip), ms(s.open), ms(s.arp_done),
+                 s.arp_misses, ms(s.connected));
         log_span("uplink", SETTLE_SAMPLES, mic::sample_count());
         if (replied) {
             ESP_LOGI(TAG, "reply %d: %d ms at %d Hz; release -> first reply audio %d ms, -> complete %d ms",
@@ -216,6 +223,7 @@ extern "C" void app_main()
         }
         ESP_LOGI(TAG, "battery %d mV", battery_mv);
 
+        wifi::stop();
         power::off();
 
         // Only reached on USB, where there's no power to cut. Act as if powered off, and treat

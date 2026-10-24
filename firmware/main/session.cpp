@@ -13,6 +13,7 @@
 #include "esp_websocket_client.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "wifi.h"
 
 namespace session {
 namespace {
@@ -38,6 +39,8 @@ int reply_rate = 0;
 int current_reply = 0;
 bool in_reply = false;
 int64_t first_audio_us = 0;
+
+Timing times{};
 
 char text[1024];  // one JSON message, reassembled if it arrives in pieces
 size_t text_len = 0;
@@ -103,7 +106,11 @@ void on_data(const esp_websocket_event_data_t *d)
 void on_event(void *, esp_event_base_t, int32_t id, void *data)
 {
     switch (id) {
+    case WEBSOCKET_EVENT_BEFORE_CONNECT:
+        times.before_connect = esp_timer_get_time();
+        break;
     case WEBSOCKET_EVENT_CONNECTED:
+        times.connected = esp_timer_get_time();
         xEventGroupSetBits(events, CONNECTED);
         break;
     case WEBSOCKET_EVENT_DATA:
@@ -134,6 +141,10 @@ bool open(int timeout_ms)
             return false;
         }
     }
+    times = {};
+    times.open = esp_timer_get_time();
+    times.arp_misses = wifi::warm_arp(secrets::SERVER_HOST, 1000);
+    times.arp_done = esp_timer_get_time();
     xEventGroupClearBits(events, CONNECTED | REPLY_DONE | FAILED);
     reply_bytes = 0;
     reply_rate = 0;
@@ -211,6 +222,11 @@ int reply_id()
 int64_t reply_first_audio_us()
 {
     return first_audio_us;
+}
+
+Timing timing()
+{
+    return times;
 }
 
 void close()

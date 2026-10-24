@@ -32,3 +32,8 @@ CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
 # app_main runs the whole push-to-talk flow (protocol messages, snprintf, playback); the 3.5 KB
 # default overflowed. Logged as "stack overflow in task main".
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Initial TCP retransmission timeout, used before a connection has measured its round-trip time:
+# exactly when we connect and push the PSRAM backlog. The 1.5 s default showed up as 1.5 s stalls
+# right after boot (2026-10-24); LAN round trips are 5-20 ms.
+CONFIG_LWIP_TCP_RTO_TIME=300

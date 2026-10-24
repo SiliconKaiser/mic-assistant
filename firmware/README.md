@@ -68,7 +68,13 @@ The firmware is C++ used as "C with classes": ESP-IDF's C APIs are called direct
 - Timestamps: `esp_timer` starts after the bootloader, so logged times are since app start, not power-on. Measure press-to-X on video (latch LED vs NeoPixel).
 - USB logs from the first ~1.5 s after a reset are lost while the port re-enumerates; log summaries at the end. Only one program can hold the serial port: stop any monitor before flashing.
 - Power-off retries the OFF pulse, because the latch once ignored one on the bench.
-- Network timing (2026-10-24, Mac server on the LAN): from a cold boot Wi-Fi took ~1.85 s and the WebSocket another ~1.3 s (unexplained; it's ~25 ms when Wi-Fi is already up). With Wi-Fi up, release to first reply audio is ~40 ms. Cold-start network time is the latency to work on (fast-connect, docs/protocol.md).
+- Cold-boot network time (2026-10-24, Mac server on the LAN), measured per stage (logged in the end-of-run summary) and tuned in [main/wifi.cpp](main/wifi.cpp) and [main/session.cpp](main/session.cpp):
+  - Join: a full scan took ~0.7 s; with the cached channel + BSSID it's ~200 ms. About 1 boot in 5 the driver doesn't see the AP on its first look and retries ~2.3 s later (open issue).
+  - IP: DHCP took 1–1.5 s; the static IP from `secrets.h` (backed by a router DHCP reservation) makes it 0.
+  - ARP: the Mac often misses the first ARP request (Wi-Fi power save), and lwIP only re-asks once a second, which showed up as ~1 s WebSocket connects. `wifi::warm_arp` re-asks every 50 ms: resolved in 40–400 ms.
+  - TCP: the 1.5 s initial retransmission timeout caused 1.5 s stalls right after connecting; it's 300 ms now ([sdkconfig.defaults](sdkconfig.defaults)).
+  - Leaving: `wifi::stop()` deauthenticates before power-off, so the AP doesn't see the next join as a stale association.
+  - Result: joined ~200 ms, WebSocket up ~80–260 ms later; release to first echoed audio 20–100 ms.
 - Stack: app_main runs the whole flow; the 3.5 KB default overflowed, so it's 8 KB ([sdkconfig.defaults](sdkconfig.defaults)). Large buffers go static or in PSRAM, not on task stacks.
 - Boot-time baseline (Arduino sketch, 2026-10-24): ~100–170 ms from latch on to code running, measured on 30 fps video. The target is under 300 ms to listening.
 - `CONFIG_BOOT_ROM_LOG_ALWAYS_OFF` is left off deliberately. It burns an eFuse, which is permanent.

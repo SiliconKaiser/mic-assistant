@@ -27,4 +27,15 @@ int64_t reply_first_audio_us();
 
 void close();
 
+// esp_timer times (us since app start) for the last open(): called, TCP connected (the
+// client's BEFORE_CONNECT fires just before connecting), WebSocket handshake done.
+struct Timing {
+    int64_t open;
+    int64_t arp_done;  // server's MAC resolved (see wifi::warm_arp)
+    int arp_misses;    // ARP requests that went unanswered first; -1 = never resolved
+    int64_t before_connect;
+    int64_t connected;
+};
+Timing timing();
+
 }  // namespace session

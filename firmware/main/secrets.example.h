@@ -16,4 +16,12 @@ inline constexpr int SERVER_PORT = 8765;
 // Must match MIC_DEVICE_TOKEN in the server's env file (local/server.env).
 inline constexpr const char *DEVICE_TOKEN = "change-me";
 
+// Static IP: skips DHCP, which cost 1-1.5 s per cold boot (2026-10-24). Use the address of a
+// DHCP reservation for this device on the router (or a free one outside the DHCP pool).
+// Leave DEVICE_IP empty to use DHCP.
+inline constexpr const char *DEVICE_IP = "";
+inline constexpr const char *GATEWAY = "";
+inline constexpr const char *NETMASK = "";
+inline constexpr const char *DNS_SERVER = "";
+
 }  // namespace secrets
