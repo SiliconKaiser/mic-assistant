@@ -20,7 +20,8 @@ constexpr size_t CHUNK = SAMPLE_RATE / 100;  // 10 ms per write and per DMA fram
 constexpr int DMA_DESCS = 6;
 // Abrupt starts and stops click; 20 ms fades don't, and still sound instant.
 constexpr size_t FADE = SAMPLE_RATE / 50;
-// The amp can put more than 1 W into the 8 ohm 1 W speaker at full scale, so cap peaks at ~70%.
+// Cap peaks at ~70% of full scale. With the 4 ohm speaker this bounds the current spikes on the
+// battery supply (reset risk); with the 8 ohm 1 W one it also keeps the speaker in its rating.
 constexpr float LIMIT = 23000;
 // Zeros before and after the audio, so SD switches while the output is silent: toggling SD
 // with audio (or stale DMA data) playing pops.

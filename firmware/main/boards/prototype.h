@@ -29,9 +29,11 @@ inline constexpr int VBAT_DIVIDER_DEN = 100;              //  100k
 // --- Audio out: MAX98357A on I2S port 1 (port 0 is reserved for PDM RX) ---
 // The amp runs from the 5V rail, which has no power while the latch is off, even on USB.
 // Don't drive these pins until power::vsw_present() is true (see power.cpp).
-// GAIN is unconnected: 9 dB. Speaker: 8 ohm 1 W (LS1). At full scale the amp can put
-// more than 1 W into it, so cap the digital volume. A 500 Hz sine at 90% of full scale
-// sounded clean on battery with no resets (2026-10-24).
+// GAIN is unconnected: 9 dB. Speaker (LS1): 4 ohm 3 W enclosed (#3351), chosen on the bench
+// 2026-10-24: much fuller than the bare 8 ohm 1 W mini oval, and 16x-gain speech playback ran
+// on battery with no resets. Into 4 ohm the amp draws ~2x the current of 8 ohm at the same
+// setting, so when raising volume, supply sag (XIAO resets) is the limit to watch, not the
+// speaker. Earlier, on the 8 ohm: a 500 Hz sine at 90% of full scale ran clean on battery.
 inline constexpr gpio_num_t PIN_I2S_BCLK = GPIO_NUM_5;   // D4
 inline constexpr gpio_num_t PIN_I2S_LRCLK = GPIO_NUM_6;  // D5
 inline constexpr gpio_num_t PIN_I2S_DOUT = GPIO_NUM_43;  // D6. Also UART0 TX: the ROM prints its boot banner here

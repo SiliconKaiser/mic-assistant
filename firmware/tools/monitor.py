@@ -3,6 +3,8 @@
 
 Prints the log with elapsed times and keeps going across resets (the XIAO's USB port drops
 and comes back on every reset). Audio blocks sent by main/dump.cpp are saved as .wav files.
+The .wav is the raw recording, before any gain: speech sits around -50 dBFS, so it plays
+much quieter than normal media until the uplink gets its gain/AGC.
 
 Run inside the ESP-IDF environment, which provides pyserial:
     . ~/Projects/esp-idf/esp-idf/export.sh

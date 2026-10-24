@@ -55,7 +55,7 @@ The firmware is C++ used as "C with classes": ESP-IDF's C APIs are called direct
 
 - The PDM mic must use I2S port 0, and the amp port 1.
 - The amp is powered only while the latch is on, even on USB. Check `power::vsw_present()` before driving any amp pin; otherwise the amp back-powers through its inputs and crackles.
-- Audio out: avoid clicks by fading in/out (~20 ms) and keeping the amp's SD high through short gaps, sending zeros. Toggling SD pops. Cap the digital volume for the 8 Ω 1 W speaker.
+- Audio out: avoid clicks by fading in/out (~20 ms) and keeping the amp's SD high through short gaps, sending zeros. Toggling SD pops. Cap the digital volume (`LIMIT` in [main/amp.cpp](main/amp.cpp)): it bounds supply current with the 4 Ω speaker and protects the 8 Ω 1 W one.
 - Audio in: the raw PDM output has a large DC offset that drifts for seconds after power-up, and the S3 has no hardware PDM high-pass, so [main/mic.cpp](main/mic.cpp) filters it. Speech peaks only reach ~4% of full scale: apply gain before sending. Drop or fade the ~100 ms start-up burst.
 - Timestamps: `esp_timer` starts after the bootloader, so logged times are since app start, not power-on. Measure press-to-X on video (latch LED vs NeoPixel).
 - USB logs from the first ~1.5 s after a reset are lost while the port re-enumerates; log summaries at the end. Only one program can hold the serial port: stop any monitor before flashing.

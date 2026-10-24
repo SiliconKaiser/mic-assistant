@@ -38,7 +38,7 @@ Not connected: U1 ON/CTRL/B, U2 EN (pulled up on the board), U3 D2 (GPIO3, a str
 | U4 | Adafruit MAX98357A #3006 | Mouser 485-3006 |
 | U5 | Adafruit PDM mic #3492 | Mouser 485-3492 |
 | U6 | Adafruit NeoPixel mini #1612 | Mouser 485-1612 |
-| LS1 | 8 Ω 1 W mini oval #3923 (or 4 Ω enclosed #3351) | Mouser |
+| LS1 | 4 Ω 3 W enclosed #3351 (bench choice: much fuller sound); 8 Ω 1 W mini oval #3923 also works | Mouser |
 | S1 | Push button | Owned |
 | D1 | 1N5817 | Mouser 863-1N5817G / kit 1N5819 |
 | D2 | 1N4148 | Owned kit |
