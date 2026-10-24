@@ -24,6 +24,7 @@ struct Timing {
     int64_t driver_up;   // driver initialized and started (NVS, netif, PHY calibration)
     int64_t associated;  // joined the access point (after scanning and authentication)
     int64_t got_ip;      // IP address assigned (DHCP, or immediately with a static IP)
+    int kicks;           // join attempts restarted by the watchdog (see wifi.cpp)
 };
 Timing timing();
 

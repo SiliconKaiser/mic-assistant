@@ -24,6 +24,9 @@
 //    address is usable as soon as the link is up.
 //  - The access point's channel and BSSID are cached in NVS after each successful join, and the
 //    next boot tries only that one. If it's gone, the cache is dropped and we scan again.
+//  - Join watchdog: about 1 boot in 5 the driver didn't see the cached AP on its first look and
+//    only retried ~2.3 s later (normal joins take ~200 ms). If we haven't joined KICK_MS after
+//    starting, restart the attempt ourselves.
 
 namespace wifi {
 namespace {
@@ -33,6 +36,8 @@ constexpr EventBits_t GOT_IP = BIT0;
 constexpr EventBits_t LEFT = BIT1;
 constexpr const char *NVS_NAMESPACE = "wifi_fast";
 constexpr const char *NVS_KEY = "ap";
+constexpr int KICK_MS = 400;
+constexpr int MAX_KICKS = 4;
 
 struct CachedAp {
     uint8_t bssid[6];
@@ -45,6 +50,8 @@ std::atomic<int64_t> got_ip_us{0};
 Timing first{};  // first connection after boot
 bool using_cache = false;
 std::atomic<bool> stopping{false};
+std::atomic<bool> kicking{false};  // the next disconnect event is our own restart: ignore it
+esp_timer_handle_t kick_timer = nullptr;
 bool static_ip = false;
 
 bool load_cache(CachedAp &ap)
@@ -102,6 +109,19 @@ void forget_ap()
     esp_wifi_set_config(WIFI_IF_STA, &cfg);
 }
 
+// esp_timer task: no join yet, so restart the attempt (same config, cached AP kept).
+void on_kick_timer(void *)
+{
+    if (first.associated || stopping || first.kicks >= MAX_KICKS) {
+        return;
+    }
+    first.kicks++;
+    kicking = true;
+    esp_wifi_disconnect();
+    esp_wifi_connect();
+    esp_timer_start_once(kick_timer, KICK_MS * 1000);
+}
+
 void mark_connected()
 {
     got_ip_us = esp_timer_get_time();
@@ -116,8 +136,10 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data)
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+        kicking = false;
         if (!first.associated) {
             first.associated = esp_timer_get_time();
+            esp_timer_stop(kick_timer);
         }
         // The default handler has already brought the netif up with the static address.
         if (static_ip) {
@@ -129,6 +151,9 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data)
         if (stopping) {
             xEventGroupSetBits(events, LEFT);
             return;
+        }
+        if (kicking.exchange(false)) {
+            return;  // from on_kick_timer's disconnect; it has already reconnected
         }
         auto *d = static_cast<wifi_event_sta_disconnected_t *>(data);
         ESP_LOGW(TAG, "not connected (reason %d), retrying", d->reason);
@@ -223,7 +248,12 @@ void start()
     }
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_set_config(WIFI_IF_STA, &cfg);
+    esp_timer_create_args_t kick_args = {};
+    kick_args.callback = on_kick_timer;
+    kick_args.name = "wifi_kick";
+    esp_timer_create(&kick_args, &kick_timer);
     esp_wifi_start();
+    esp_timer_start_once(kick_timer, KICK_MS * 1000);
     // The device is only on for one exchange: latency matters more than radio power save.
     esp_wifi_set_ps(WIFI_PS_NONE);
     first.driver_up = esp_timer_get_time();
