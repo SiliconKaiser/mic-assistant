@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "amp.h"
 #include "battery.h"
 #include "board.h"
 #include "esp_log.h"
@@ -24,8 +25,10 @@ const char *TAG = "main";
 constexpr int MIN_RECORD_MS = 2000;
 // The button must read released this long before recording stops (contact bounce).
 constexpr int RELEASE_MS = 50;
-// The PDM decimation filter settles during the first ~100 ms; leave that out of the levels.
+// Every recording starts with a ~100 ms mic start-up burst; leave it out of levels and playback.
 constexpr size_t SETTLE_SAMPLES = mic::SAMPLE_RATE / 10;
+// Speech peaks ~1400 of 32767 at arm's length; 16x brings them to ~70% of full scale.
+constexpr float PLAYBACK_GAIN = 16;
 
 void delay_ms(int ms)
 {
@@ -112,6 +115,17 @@ extern "C" void app_main()
             ESP_LOGE(TAG, "mic delivered no audio");
         }
         ESP_LOGI(TAG, "battery %d mV", battery::read_mv());
+
+        // Skeleton: play the recording back (purple) as an on-device audio check.
+        size_t n = mic::sample_count();
+        if (listening && n > SETTLE_SAMPLES) {
+            led::set(20, 0, 20);
+            if (amp::play(mic::samples() + SETTLE_SAMPLES, n - SETTLE_SAMPLES, PLAYBACK_GAIN)) {
+                ESP_LOGI(TAG, "played back %d ms at %.0fx", int((n - SETTLE_SAMPLES) * 1000 / mic::SAMPLE_RATE),
+                         PLAYBACK_GAIN);
+            }
+            led::set(0, 0, 0);
+        }
 
         power::off();
 

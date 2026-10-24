@@ -26,6 +26,8 @@ void delay_ms(int ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
+}  // namespace
+
 // The amp runs from the 5V rail, which only has power while the latch is on: D1 stops USB
 // from feeding it. Driving the amp's inputs high while it's unpowered back-powers it through
 // its input protection diodes. On the bench that made it half-work and crackle, and it
@@ -45,8 +47,6 @@ void release_amp_pins()
     };
     gpio_config(&cfg);
 }
-
-}  // namespace
 
 void init()
 {
