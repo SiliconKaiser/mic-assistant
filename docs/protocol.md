@@ -24,7 +24,7 @@ ws://<server>:<port>/device
 Authorization: Bearer <device token>
 ```
 
-- The server address, port and token are flashed into the firmware for now (see [Wi-Fi and credentials](#wi-fi-and-credentials)).
+- The server address, port and token are flashed into the firmware for now (see [Wi-Fi and credentials](#wi-fi-and-credentials)). The server starts on a Mac and moves to a Linux home server later, so prefer an mDNS hostname (`<host>.local`) over a raw IP.
 - The device does not wait for any reply from the server before streaming. Saving that round trip is the point.
 - The server rejects a bad token or version by closing the socket: close code `4001` (unauthorized) or `4002` (unsupported protocol version).
 
@@ -85,7 +85,7 @@ The server tells the AI to cancel the reply and cut its record of the reply at `
 
 ## Server side: mapping to the AI providers
 
-Both main realtime APIs support explicit push-to-talk with their voice activity detection turned off.
+Both main realtime APIs support explicit push-to-talk with their voice activity detection turned off. **Chosen: Gemini Live** (2026-10-24); the OpenAI column stays as the fallback.
 
 | Device event | OpenAI Realtime | Gemini Live |
 | --- | --- | --- |
