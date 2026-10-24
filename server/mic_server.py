@@ -198,6 +198,8 @@ class GeminiConversation:
         return types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],
             system_instruction=SYSTEM_INSTRUCTION,
+            # Google Search grounding, so questions about current events, weather, etc. get answers.
+            tools=[types.Tool(google_search=types.GoogleSearch())],
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)),
             session_resumption=types.SessionResumptionConfig(handle=handle),
