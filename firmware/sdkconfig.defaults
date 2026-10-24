@@ -19,3 +19,8 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MEMTEST=n
 
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# C++ subset: no exceptions, no RTTI. These are ESP-IDF's defaults, set here so they stay
+# that way. See README "C++ conventions".
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n

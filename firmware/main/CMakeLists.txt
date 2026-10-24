@@ -1,5 +1,9 @@
 idf_component_register(
-    SRCS "main.c" "power.c" "battery.c"
+    SRCS "main.cpp" "power.cpp" "battery.cpp"
     INCLUDE_DIRS "."
     REQUIRES driver esp_adc esp_timer
 )
+
+# ESP-IDF config structs are filled with designated initializers that leave fields out on
+# purpose (they're zero-initialized). C++ warns about that, C doesn't; keep the C habit.
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-missing-field-initializers)

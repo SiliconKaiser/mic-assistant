@@ -1,12 +1,19 @@
 #pragma once
 
-#include <stdbool.h>
+namespace power {
 
 // Call first thing in app_main: on boards with a non-self-holding latch this keeps power on.
-void power_init(void);
+// Also leaves the amp pins floating (see power.cpp).
+void init();
 
 // True while the push-to-talk button is held.
-bool power_ptt_pressed(void);
+bool ptt_pressed();
+
+// True while VSW is live: the latch is on, so the 5V rail and the amp have power.
+// False on USB with the latch off.
+bool vsw_present();
 
 // Cut our own power. Does not return on battery; returns only if powered over USB.
-void power_off(void);
+void off();
+
+}  // namespace power
