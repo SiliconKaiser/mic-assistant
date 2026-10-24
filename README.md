@@ -21,8 +21,8 @@ The device only captures and plays audio. A server on a computer at home bridges
 
 | Area | State |
 | --- | --- |
-| Prototype hardware | Parts ordered 2026-10-18; netlist and assembly guide ready |
-| Firmware | ESP-IDF skeleton builds (power, battery, boot timing) |
+| Prototype hardware | Assembled and bench-tested 2026-10-24: all assembly-guide stages pass |
+| Firmware | ESP-IDF skeleton in C++ builds (power, battery, boot timing); first run on the prototype pending |
 | Server | Not started |
 | PCB | Not started; waits on a working prototype |
 | Enclosure | Not started; 3D printed, after the prototype |
@@ -38,4 +38,4 @@ The device only captures and plays audio. A server on a computer at home bridges
 | [firmware/](firmware/) | ESP-IDF firmware for the ESP32-S3 |
 | [server/](server/) | Home server: device audio ↔ voice AI ↔ Home Assistant |
 | [enclosure/](enclosure/) | 3D-printable case |
-| `notes/` | Personal notes and photos, not tracked by git |
+| `local/` | Not tracked by git: personal notes and photos (`local/notes/`) and other local-only files |

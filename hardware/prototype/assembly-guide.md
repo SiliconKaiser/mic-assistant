@@ -16,45 +16,66 @@ The circuit is in [netlist.md](netlist.md). When this guide says "connect to VSW
 | MAX98357A amp | Solder its 7-pin header. Screw the speaker wires into the terminal block. |
 | PDM mic | Solder its 5-pin header. |
 | NeoPixel mini (one from the 5-pack) | Solder 3 short wires to +, −, and In. It has no header. |
-| 4×AAA clip | If its leads are stranded, tin them or crimp on pins so they seat in the breadboard. |
+| Battery holder (4×AA, or the 4×AAA clip) | If its leads are stranded, tin them or crimp on pins so they seat in the breadboard. |
 
 Use your flux on every joint. Trim the resistor and capacitor leads to about 1 cm before inserting them.
 
-### Breadboard layout
+### Pinouts
 
-The layout assumes the 830-point breadboard from your starter kit: rows 1–63, columns a–e and f–j, and two rails on each side.
+Wiring steps name pins, not breadboard holes. Place the modules wherever they fit, as long as every pin lands in its own row and no two pins share a row unless they're meant to connect. The XIAO and the latch straddle the center gap.
 
-| Area | Use |
+Use the power rail for **+ = 5V** and **− = GND**. 3V3 only feeds the mic and the NeoPixel, so wire those straight to the XIAO's **3V3** pin. If the rail is split in the middle, bridge it, and check continuity from end to end with the multimeter.
+
+Pin order is top to bottom, with each board's components facing up.
+
+**XIAO ESP32-S3**, USB-C at the top. Check against your board's silkscreen.
+
+| Left | Right |
 | --- | --- |
-| Left rail pair | **+ = 5V**, **− = GND** |
-| Right rail pair | **+ = 3V3**, **− = GND** |
-| Rows 1–7 | XIAO, straddling the center gap in columns c and h, USB-C end facing off the board at row 1 |
-| Rows 10–14 | PDM mic, pins down column b |
-| Rows 17–23 | Amp, pins down column b |
-| Rows 27–35 | Button, diodes, pull-down resistors, battery divider |
-| Rows 40–63 | Pololu latch and regulator, wherever their headers fit |
+| D0 / GPIO1 | 5V |
+| D1 / GPIO2 | GND |
+| D2 / GPIO3 | 3V3 |
+| D3 / GPIO4 | D10 / GPIO9 |
+| D4 / GPIO5 | D9 / GPIO8 |
+| D5 / GPIO6 | D8 / GPIO7 |
+| D6 / GPIO43 | D7 / GPIO44 |
 
-Connect the two GND rails with a jumper at each end. Many breadboards split each rail in the middle, so check continuity from top to bottom with the multimeter.
+**Pololu #2808 latch**, MOSFETs at the top and pushbutton at the bottom. The labels are printed on the underside, mirrored.
 
-XIAO pins with the USB at the top, so the left column is c and the right column is h:
+| Left | Right |
+| --- | --- |
+| VIN | VOUT |
+| VIN | VOUT |
+| GND | GND |
+| GND | GND |
+| ON | A or B (button) |
+| OFF | A or B (button) |
+| CTRL | (no pin) |
 
-| Row | Left (c) | Right (h) |
-| --- | --- | --- |
-| 1 | D0 / GPIO1 | 5V |
-| 2 | D1 / GPIO2 | GND |
-| 3 | D2 / GPIO3 | 3V3 |
-| 4 | D3 / GPIO4 | D10 / GPIO9 |
-| 5 | D4 / GPIO5 | D9 / GPIO8 |
-| 6 | D5 / GPIO6 | D8 / GPIO7 |
-| 7 | D6 / GPIO43 | D7 / GPIO44 |
+Paired pins are connected on the board, so wire either one. Pololu doesn't document which button pin is A; Stage 1 shows how to find it.
 
-Check this against the silkscreen on your board before wiring.
+**Pololu S9V11F5 regulator**: three pins in a row. With the header on the right, they read **VIN, GND, VOUT** from top to bottom; GND has the square pad. **EN** is the separate round pad next to GND. Leave it unconnected.
+
+**MAX98357A amp**: LRC, BCLK, DIN, GAIN, SD, GND, Vin. The speaker terminals are marked − and +.
+
+**PDM mic**: 3V, GND, SEL, CLK, DAT.
 
 ### Arduino setup (for the test sketches)
 
 1. Install the Arduino IDE, then add the **esp32 by Espressif** boards package, version 3.x.
 2. Select the board **XIAO_ESP32S3**, then set **USB CDC On Boot: Enabled** and **PSRAM: OPI PSRAM**.
-3. If an upload fails, hold the XIAO's **B** button while plugging in USB, then try again.
+3. If an upload fails, hold the XIAO's **B** button while plugging in USB, then try again. After an upload in that mode, press **R** (reset) so the sketch runs.
+
+Without the IDE: the IDE ships `arduino-cli`, which uses the same boards package.
+
+```sh
+CLI="/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli"
+"$CLI" core update-index && "$CLI" core install esp32:esp32
+# Each sketch lives in a folder of the same name: stage2/stage2.ino
+"$CLI" compile --upload -p /dev/cu.usbmodem1101 --fqbn esp32:esp32:XIAO_ESP32S3:PSRAM=opi stage2
+```
+
+USB CDC On Boot is already Enabled by default for this board. Don't add `CDCOnBoot=cdc`: on this board that value means *Disabled*.
 
 These sketches are bench tests only. The real firmware will be ESP-IDF.
 
@@ -70,17 +91,18 @@ Wiring:
 3. Latch **VOUT** → regulator **VIN**. This connection is the **VSW** net.
 4. Regulator **GND** → GND rail. Regulator **VOUT** → **5V** rail. Leave **EN** unconnected.
 5. **C1** (1000 µF) from the 5V rail to the GND rail, right next to the regulator. **The stripe (−) side goes to GND.**
-6. Button **S1**: one leg to latch **A**, the other leg to the GND rail.
+6. Button **S1**: one leg to latch **A**, the other leg to the GND rail. Pololu doesn't say which button pin is A, so start with the upper one; the checks below confirm it.
 
 Checks:
 - [ ] Battery leads: the meter shows no short between red and black.
-- [ ] Insert the 4 AAA cells. **VSW reads 0 V** and the 5V rail reads 0 V.
-- [ ] Press S1. VSW jumps to the battery voltage (about 6 V with fresh cells) and the 5V rail reads **4.9–5.1 V**. The latch's LED lights.
+- [ ] Insert the 4 cells. **VSW reads 0 V** and the 5V rail reads 0 V.
+- [ ] Press S1. VSW jumps to the battery voltage (6.5–6.8 V with brand-new alkalines) and the 5V rail reads **4.9–5.1 V**. The latch's LED lights.
+- [ ] Press S1 again. Power stays on, because A to GND can only turn the latch on. If the first press did nothing, or the second press turned it off, S1 is on B: move it to the other button pin.
 - [ ] Turn power off with the latch's onboard button. VSW returns to 0 V.
-- [ ] **Off current:** remove one cell and put the meter, on its µA range, in its place. It should read **under 1 µA**. A reading in the mA range means the latch isn't off or something is wired wrong.
+- [ ] **Off current:** remove one cell and put the meter, on its µA range, in its place. It should read **under 1 µA**. A reading in the mA range means the latch isn't off or something is wired wrong. **Remove the meter, or switch it to mA, before pressing S1.** On the µA range it drops several volts once the board draws current, which starves it: in later stages that shows up as a flickering LED and phantom button presses.
 
 If something's wrong:
-- **Nothing happens on a press:** check the button is between A and GND, not A and B.
+- **Nothing happens on a press:** S1 may be on B instead of A. Move it to the other button pin. Also check S1 goes to GND, not to the other button pin.
 - **The 5V rail is low:** the cells may be weak, or the regulator wiring is swapped.
 
 ---
@@ -88,11 +110,11 @@ If something's wrong:
 ## Stage 2: XIAO on battery, and self power-off
 
 Wiring:
-1. **D1** (1N5817): anode (no band) on the 5V rail, cathode (band) to **XIAO 5V** (row 1, h-side).
-2. **C2** (10 µF) and **C3** (0.1 µF) from XIAO 5V to GND. If C2 is an electrolytic, the stripe goes to GND.
-3. XIAO **GND** (row 2, right side) → GND rail.
-4. XIAO **3V3** (row 3, right side) → 3V3 rail.
-5. XIAO **D3/GPIO4** (row 4, left side) → latch **OFF**. Add **R3** (100 kΩ) from that row to GND.
+1. **D1** (1N5817): anode (no band) on the 5V rail, cathode (band) to XIAO **5V**.
+2. **C2** (10 µF electrolytic; stripe to GND) and **C3** (0.1 µF ceramic) from XIAO 5V to GND.
+3. XIAO **GND** → GND rail.
+4. Leave XIAO **3V3** unconnected for now. The mic and NeoPixel connect to it later.
+5. XIAO **D3/GPIO4** → latch **OFF**. Add **R3** (100 kΩ) from D3/GPIO4 to GND.
 
 Sketch: flash it over USB with the cells removed.
 
@@ -133,9 +155,9 @@ If something's wrong:
 ## Stage 3: button sense, battery reading, NeoPixel
 
 Wiring:
-1. **D2** (1N4148): anode (no band) to XIAO **D1/GPIO2** (row 2, left side), cathode (band) to the **latch A / button** node.
-2. **R1** (220 kΩ) from **VSW** to a free row, **R2** (100 kΩ) from that row to GND, and **C4** (0.1 µF) from that row to GND. That row is **VBAT_SENSE**. Connect it to XIAO **D0/GPIO1** (row 1, left side).
-3. NeoPixel: **+** → 3V3 rail, **−** → GND, **In** → XIAO **D7/GPIO44** (row 7, right side).
+1. **D2** (1N4148): anode (no band) to XIAO **D1/GPIO2**, cathode (band) to the **latch A / button** node.
+2. **R1** (220 kΩ) from **VSW** to R2, then **R2** (100 kΩ) to GND. Their junction is **VBAT_SENSE**. Put **C4** (0.1 µF) from VBAT_SENSE to GND, and connect VBAT_SENSE to XIAO **D0/GPIO1**.
+3. NeoPixel: **+** → XIAO **3V3**, **−** → GND, **In** → XIAO **D7/GPIO44**.
 
 Sketch: you can run this one on USB.
 
@@ -173,7 +195,7 @@ If something's wrong:
 
 ## Stage 4: microphone
 
-Wiring: mic **3V** → 3V3 rail, **GND** → GND, **SEL** → GND, **CLK** → XIAO **D9/GPIO8** (row 5, right side), **DAT** → XIAO **D10/GPIO9** (row 4, right side). Keep these two jumpers short.
+Wiring: mic **3V** → XIAO **3V3**, **GND** → GND, **SEL** → GND, **CLK** → XIAO **D9/GPIO8**, **DAT** → XIAO **D10/GPIO9**. Keep these two jumpers short.
 
 ```cpp
 // Stage 4: print the mic's peak level. Talk, clap, stay quiet.
@@ -206,11 +228,13 @@ Checks:
 
 Wiring:
 1. Amp **Vin** → 5V rail. Amp **GND** → GND.
-2. **C5** (100 µF; stripe to GND) and **C6** (10 µF) from amp Vin to GND, next to the amp.
-3. Amp **BCLK** → XIAO **D4/GPIO5** (row 5, left side). Amp **LRC** → **D5/GPIO6** (row 6, left side). Amp **DIN** → **D6/GPIO43** (row 7, left side).
-4. Amp **SD** → XIAO **D8/GPIO7** (row 6, right side), with **R4** (10 kΩ) from SD to GND.
+2. **C5** (100 µF) and **C6** (10 µF) from amp Vin to GND, next to the amp. Both are electrolytic: stripe to GND.
+3. Amp **BCLK** → XIAO **D4/GPIO5**. Amp **LRC** → **D5/GPIO6**. Amp **DIN** → **D6/GPIO43**.
+4. Amp **SD** → XIAO **D8/GPIO7**, with **R4** (10 kΩ) from SD to GND.
 5. Leave **GAIN** unconnected for 9 dB.
 6. Speaker wires go only in the amp's terminal block. **Never connect either speaker wire to GND.**
+
+The amp runs from the 5V rail, so **the latch must be on** (cells in, press S1) even while you're on USB. With the latch off, the amp only gets power leaking in through its signal pins, and it crackles.
 
 ```cpp
 // Stage 5: play a 500 Hz tone, 1 s on / 1 s off.
