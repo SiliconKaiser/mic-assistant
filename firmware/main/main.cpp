@@ -8,6 +8,7 @@
 #include "amp.h"
 #include "battery.h"
 #include "board.h"
+#include "dump.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -116,9 +117,11 @@ extern "C" void app_main()
         }
         ESP_LOGI(TAG, "battery %d mV", battery::read_mv());
 
-        // Skeleton: play the recording back (purple) as an on-device audio check.
+        // Skeleton: send the recording to the computer (if on USB), then play it back (purple)
+        // as an on-device audio check. Both skip the start-up burst.
         size_t n = mic::sample_count();
         if (listening && n > SETTLE_SAMPLES) {
+            dump::wav(mic::samples() + SETTLE_SAMPLES, n - SETTLE_SAMPLES, mic::SAMPLE_RATE);
             led::set(20, 0, 20);
             if (amp::play(mic::samples() + SETTLE_SAMPLES, n - SETTLE_SAMPLES, PLAYBACK_GAIN)) {
                 ESP_LOGI(TAG, "played back %d ms at %.0fx", int((n - SETTLE_SAMPLES) * 1000 / mic::SAMPLE_RATE),
