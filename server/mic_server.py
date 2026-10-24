@@ -17,7 +17,7 @@ Config (environment variables, or KEY=VALUE lines in the env file):
     GEMINI_API_KEY            for the gemini backend
     MIC_GEMINI_MODEL          Live API model; default below (check the current list: they change)
     MIC_CONVERSATION_SECONDS  a press within this long after the last one continues the same
-                              conversation (Gemini session resumption); default 60
+                              conversation (Gemini session resumption); default 900 (15 min)
     MIC_PORT                  default 8765
     MIC_HOST                  default 0.0.0.0 (all interfaces)
     MIC_RECORDINGS            where turn audio is saved; default local/server-recordings
@@ -396,7 +396,7 @@ def make_backend():
         if not key:
             raise SystemExit("MIC_BACKEND=gemini needs GEMINI_API_KEY")
         return GeminiBackend(key, os.environ.get("MIC_GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
-                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "60")))
+                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "900")))
     raise SystemExit(f"unknown MIC_BACKEND {choice!r} (gemini or echo)")
 
 

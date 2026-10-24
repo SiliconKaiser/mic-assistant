@@ -103,7 +103,7 @@ Notes:
 
 The device powers off after every reply, so a follow-up question is a new connection. The server keeps each device's AI session open for a while after `reply_end`, keyed by `device_id`. A `hello` from that device within the window continues the same conversation. After the window, the next `hello` starts a fresh one.
 
-Open question: the window length (60 s to start). Keeping the device powered for a few seconds after a reply would avoid the reconnect for quick follow-ups, but costs battery (~100 mA while on).
+Window: 15 minutes (decided 2026-10-24), measured from the end of the last exchange; `MIC_CONVERSATION_SECONDS` on the server changes it. Gemini keeps resumption tokens valid for 2 hours, so anything up to that works. Tokens live in server memory, so a server restart starts fresh conversations. Keeping the device powered for a few seconds after a reply would avoid the reconnect for quick follow-ups, but costs battery (~100 mA while on).
 
 ## Failures
 
