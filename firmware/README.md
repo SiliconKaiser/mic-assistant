@@ -2,7 +2,7 @@
 
 ESP-IDF firmware for the ESP32-S3. One codebase, built per board.
 
-Current state: a skeleton. It holds power, logs boot time, battery voltage and PTT state, blinks, then powers itself off. Audio, Wi-Fi and the server protocol are next.
+Current state: a push-to-talk skeleton. It holds power, lights the NeoPixel, starts the mic within ~75 ms of the press, records into PSRAM while S1 is held, logs levels, then powers itself off. On USB it waits for the next S1 press instead. Speaker output, Wi-Fi and the server protocol are next.
 
 ## Build and flash
 
@@ -37,7 +37,9 @@ To add a board: create `boards/<name>/sdkconfig.defaults`, add a `CONFIG_BOARD_<
 | [main/board.h](main/board.h) | Picks the board's pin map |
 | [main/power.cpp](main/power.cpp) | Latch control, PTT reading, VSW check, amp-pin safety. Handles both a self-holding latch (prototype) and a hold-pin latch (PCB) |
 | [main/battery.cpp](main/battery.cpp) | Battery voltage through the divider (ADC calibrated; divider not yet) |
-| [main/main.cpp](main/main.cpp) | Entry point (`extern "C" app_main`) |
+| [main/led.cpp](main/led.cpp) | Status NeoPixel via the RMT peripheral |
+| [main/mic.cpp](main/mic.cpp) | PDM mic on I2S0 into a 30 s PSRAM buffer, with a DC-blocking high-pass |
+| [main/main.cpp](main/main.cpp) | Entry point (`extern "C" app_main`): the push-to-talk flow |
 
 ## C++ conventions
 
@@ -54,7 +56,9 @@ The firmware is C++ used as "C with classes": ESP-IDF's C APIs are called direct
 - The PDM mic must use I2S port 0, and the amp port 1.
 - The amp is powered only while the latch is on, even on USB. Check `power::vsw_present()` before driving any amp pin; otherwise the amp back-powers through its inputs and crackles.
 - Audio out: avoid clicks by fading in/out (~20 ms) and keeping the amp's SD high through short gaps, sending zeros. Toggling SD pops. Cap the digital volume for the 8 Ω 1 W speaker.
-- Audio in: speech at arm's length only reaches ~1.5% of full scale, so apply digital gain before sending it.
+- Audio in: the raw PDM output has a large DC offset that drifts for seconds after power-up, and the S3 has no hardware PDM high-pass, so [main/mic.cpp](main/mic.cpp) filters it. Speech peaks only reach ~4% of full scale: apply gain before sending. Drop or fade the ~100 ms start-up burst.
+- Timestamps: `esp_timer` starts after the bootloader, so logged times are since app start, not power-on. Measure press-to-X on video (latch LED vs NeoPixel).
+- USB logs from the first ~1.5 s after a reset are lost while the port re-enumerates; log summaries at the end. Only one program can hold the serial port: stop any monitor before flashing.
 - Power-off retries the OFF pulse, because the latch once ignored one on the bench.
 - Boot-time baseline (Arduino sketch, 2026-10-24): ~100–170 ms from latch on to code running, measured on 30 fps video. The target is under 300 ms to listening.
 - `CONFIG_BOOT_ROM_LOG_ALWAYS_OFF` is left off deliberately. It burns an eFuse, which is permanent.

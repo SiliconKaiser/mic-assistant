@@ -38,8 +38,11 @@ inline constexpr gpio_num_t PIN_I2S_DOUT = GPIO_NUM_43;  // D6. Also UART0 TX: t
 inline constexpr gpio_num_t PIN_AMP_SD = GPIO_NUM_7;     // D8, low = amp shut down (R4 pulls it low)
 
 // --- Audio in: Adafruit PDM mic on I2S port 0 (PDM RX only works on port 0) ---
-// Levels at 16 kHz/16-bit: silence peaks ~45, speech at arm's length peaks ~500,
-// claps reach ~14000 (of 32767). Speech needs digital gain before it goes to the server.
+// Levels at 16 kHz/16-bit after mic.cpp's DC high-pass (ESP-IDF, 2026-10-24): silence RMS ~6
+// (peaks ~25), normal speech RMS ~60 with peaks ~1400 (of 32767). Arduino saw claps ~14000.
+// Speech needs ~16x digital gain (or AGC) before it goes to the server. Every recording
+// starts with a ~100 ms start-up burst (peaks 4000-6000) the high-pass doesn't remove: drop
+// or fade it before streaming.
 inline constexpr gpio_num_t PIN_MIC_CLK = GPIO_NUM_8;  // D9
 inline constexpr gpio_num_t PIN_MIC_DAT = GPIO_NUM_9;  // D10
 
