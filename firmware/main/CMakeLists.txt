@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "power.cpp" "battery.cpp"
+    SRCS "main.cpp" "power.cpp" "battery.cpp" "led.cpp"
     INCLUDE_DIRS "."
     REQUIRES driver esp_adc esp_timer
 )
