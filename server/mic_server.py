@@ -97,6 +97,9 @@ class EchoConversation:
         await self.sink.reply_audio(bytes(self.pcm))
         await self.sink.end_reply()
 
+    async def interrupted(self, reply_id, heard_ms):
+        pass  # the whole echo was already sent
+
     async def close(self):
         pass
 
@@ -149,12 +152,20 @@ class GeminiConversation:
         self.cm = None
         self.session = None
         self.turn_end_at = None
+        # Interruption: from a new turn_start until its activityEnd is sent, any model output is
+        # the old reply (with manual activity detection Gemini can't answer the new turn before
+        # activityEnd), so it's dropped. activityStart itself makes Gemini cancel the old reply.
+        self.discarding = False
+        self.replying = False
 
     async def open(self):
         # Connect in the background, so the device's turn streams in (into the outbox) meanwhile.
         self.tasks.append(asyncio.create_task(self._run()))
 
     async def turn_start(self, turn_id):
+        if self.turn_end_at is not None:  # a previous turn exists: its reply may still be coming
+            self.discarding = True
+            self.replying = False
         self.outbox.put_nowait(("start", None))
 
     async def audio(self, pcm):
@@ -163,6 +174,9 @@ class GeminiConversation:
     async def turn_end(self, turn_id):
         self.turn_end_at = time.monotonic()
         self.outbox.put_nowait(("end", None))
+
+    async def interrupted(self, reply_id, heard_ms):
+        pass  # Gemini cancels on the next activityStart; see turn_start
 
     async def close(self):
         for task in self.tasks:
@@ -220,10 +234,10 @@ class GeminiConversation:
                     audio=types.Blob(data=payload, mime_type=f"audio/pcm;rate={UPLINK_RATE}"))
             elif kind == "end":
                 await self.session.send_realtime_input(activity_end=types.ActivityEnd())
+                self.discarding = False  # from here on, output answers this turn
 
     async def _receive(self):
         heard, said = [], []
-        replying = False
         try:
             while True:
                 # receive() ends after each turn_complete; keep listening for the next turn.
@@ -240,11 +254,18 @@ class GeminiConversation:
                         heard.append(content.input_transcription.text)
                     if content.output_transcription and content.output_transcription.text:
                         said.append(content.output_transcription.text)
+                    if self.discarding:
+                        if content.interrupted or content.turn_complete:
+                            log.info('%s: old reply %s; heard "%s", said so far "%s"', self.device_id,
+                                     "interrupted" if content.interrupted else "finished",
+                                     "".join(heard).strip(), "".join(said).strip())
+                            heard, said = [], []
+                        continue  # the interrupted reply's leftovers
                     if content.model_turn:
                         for part in content.model_turn.parts or []:
                             if part.inline_data and part.inline_data.data:
-                                if not replying:
-                                    replying = True
+                                if not self.replying:
+                                    self.replying = True
                                     wait = (time.monotonic() - self.turn_end_at) * 1000 if self.turn_end_at else -1
                                     log.info("%s: first reply audio %d ms after turn_end", self.device_id, wait)
                                     await self.sink.begin_reply(GEMINI_OUTPUT_RATE)
@@ -252,10 +273,10 @@ class GeminiConversation:
                     if content.interrupted:
                         log.info("%s: Gemini reply interrupted", self.device_id)
                     if content.turn_complete:
-                        if not replying:  # nothing to say: still close the turn for the device
+                        if not self.replying:  # nothing to say: still close the turn for the device
                             await self.sink.begin_reply(GEMINI_OUTPUT_RATE)
                         await self.sink.end_reply()
-                        replying = False
+                        self.replying = False
                         log.info('%s: heard "%s"', self.device_id, "".join(heard).strip())
                         log.info('%s: said  "%s"', self.device_id, "".join(said).strip())
                         heard, said = [], []
@@ -279,6 +300,7 @@ class DeviceSession:
         self.turn_audio = bytearray()
         self.next_reply_id = 1
         self.reply_id = None
+        self.reply_turn = 0  # turn the next reply answers
         self.reply_bytes = 0
         self.reply_rate = 0
         self.t0 = time.monotonic()
@@ -317,6 +339,7 @@ class DeviceSession:
             await self.conversation.open()
         elif kind == "turn_start":
             self.turn_id = msg.get("turn_id")
+            self.reply_turn = self.turn_id
             self.turn_audio = bytearray()
             log.info("%s: turn %s started at %d ms", self.device_id, self.turn_id, self.ms())
             if self.conversation:
@@ -332,6 +355,8 @@ class DeviceSession:
         elif kind == "playback_stopped":
             log.info("%s: reply %s %s after %s ms played", self.device_id, msg.get("reply_id"),
                      msg.get("reason"), msg.get("played_ms"))
+            if msg.get("reason") == "interrupted" and self.conversation:
+                await self.conversation.interrupted(msg.get("reply_id"), msg.get("played_ms"))
         else:
             log.warning("%s: unknown message %r", self.device_id, kind)
 
@@ -342,8 +367,8 @@ class DeviceSession:
         self.next_reply_id += 1
         self.reply_bytes = 0
         self.reply_rate = rate
-        await self.ws.send(json.dumps({"type": "reply_start", "reply_id": self.reply_id, "turn_id": 1,
-                                       "sample_rate": rate}))
+        await self.ws.send(json.dumps({"type": "reply_start", "reply_id": self.reply_id,
+                                       "turn_id": self.reply_turn, "sample_rate": rate}))
 
     async def reply_audio(self, pcm):
         for i in range(0, len(pcm), MAX_FRAME_BYTES):

@@ -14,8 +14,13 @@ bool open(int timeout_ms);
 bool send_text(const char *json);
 bool send_audio(const int16_t *samples, size_t n);
 
+// The turn whose reply we want. Call before sending its turn_start: from then on, replies to
+// older turns (still arriving after an interrupt) are dropped, and the reply state starts fresh.
+void expect_turn(int turn_id);
+
 // Wait for a reply to start (reply_start). False on timeout, an `error` message, or disconnect.
 bool wait_reply_start(int timeout_ms);
+bool reply_started();
 // The reply has fully arrived (reply_end), or the session failed.
 bool reply_complete();
 bool failed();

@@ -40,6 +40,7 @@ std::atomic<int> reply_rate{0};
 std::atomic<int> current_reply{0};
 std::atomic<bool> in_reply{false};
 std::atomic<int64_t> first_audio_us{0};
+std::atomic<int> expected_turn{1};
 
 Timing times{};
 
@@ -59,6 +60,10 @@ void on_message(const char *json)
     if (!type) {
         ESP_LOGW(TAG, "unreadable message: %.60s", json);
     } else if (!strcmp(type, "reply_start")) {
+        if (int_field(msg, "turn_id") != expected_turn) {
+            cJSON_Delete(msg);
+            return;  // a reply to a turn the user has already interrupted
+        }
         current_reply = int_field(msg, "reply_id");
         reply_rate = int_field(msg, "sample_rate");
         reply_bytes = 0;
@@ -66,6 +71,10 @@ void on_message(const char *json)
         in_reply = true;
         xEventGroupSetBits(events, REPLY_STARTED);
     } else if (!strcmp(type, "reply_end")) {
+        if (!in_reply || int_field(msg, "reply_id") != current_reply) {
+            cJSON_Delete(msg);
+            return;
+        }
         in_reply = false;
         xEventGroupSetBits(events, REPLY_DONE);
     } else if (!strcmp(type, "error")) {
@@ -193,6 +202,22 @@ bool send_audio(const int16_t *samples, size_t n)
 {
     return client && esp_websocket_client_send_bin(client, reinterpret_cast<const char *>(samples),
                                                    int(n * sizeof(int16_t)), pdMS_TO_TICKS(2000)) >= 0;
+}
+
+void expect_turn(int turn_id)
+{
+    expected_turn = turn_id;
+    in_reply = false;  // stops the WebSocket task appending audio from an older reply
+    reply_bytes = 0;
+    first_audio_us = 0;
+    if (events) {
+        xEventGroupClearBits(events, REPLY_STARTED | REPLY_DONE);
+    }
+}
+
+bool reply_started()
+{
+    return xEventGroupGetBits(events) & REPLY_STARTED;
 }
 
 bool wait_reply_start(int timeout_ms)

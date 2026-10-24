@@ -2,7 +2,7 @@
 
 How a mic-assistant device talks to the home server: one WebSocket per button press, carrying the user's audio up and the reply audio down, with explicit push-to-talk turn control.
 
-Status: v1 draft (2026-10-24). Implemented so far by the firmware and the echo server ([server/mic_server.py](../server/mic_server.py)): `hello`, one turn per connection, `reply_start`/`reply_end`, `playback_stopped` (done). The device plays the reply while it streams in (after ~150 ms of buffer). Gemini Live bridge: [server/mic_server.py](../server/mic_server.py). Not yet: interruption.
+Status: v1 draft (2026-10-24). Implemented so far by the firmware and the echo server ([server/mic_server.py](../server/mic_server.py)): `hello`, one turn per connection, `reply_start`/`reply_end`, `playback_stopped` (done). The device plays the reply while it streams in (after ~150 ms of buffer), and a press while waiting for or playing a reply interrupts it (new turn on the same connection; replies to older turns are dropped by `turn_id`). Gemini Live bridge: [server/mic_server.py](../server/mic_server.py).
 
 ## Design choices
 
