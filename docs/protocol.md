@@ -121,6 +121,8 @@ Applied before audio is sent:
 - Drop the ~100 ms mic start-up burst at the start of each recording.
 - Gain: speech peaks only reach ~4% of full scale at arm's length, so ~16× (24 dB) fixed gain for now, automatic gain control later.
 
+Then on the server, before the AI hears it (`UplinkCleaner` in [server/mic_server.py](../server/mic_server.py)): single-sample pops are interpolated away, the button's release click is ducked, and everything below 180 Hz is filtered out (the click rings at ~150 Hz). The server saves both the raw turn and the cleaned one (`-clean.wav`).
+
 ## Wi-Fi and credentials
 
 For now the Wi-Fi SSID and password, server address and device token are flashed in: `firmware/main/secrets.h`, ignored by git, copied from a committed `secrets.example.h`. The build fails with a pointer to the example if it's missing. A header is used instead of ESP-IDF config options because once a board's `sdkconfig` holds a value, later edits to a defaults file don't override it.

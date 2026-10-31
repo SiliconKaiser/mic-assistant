@@ -11,6 +11,8 @@ server/.venv/bin/python server/mic_server.py        # reads local/server.env
 
 `local/server.env` (not in git) holds `MIC_DEVICE_TOKEN` (must match the firmware's `secrets.h`), `MIC_PORT` (8765) and `GEMINI_API_KEY`; see the docstring in [mic_server.py](mic_server.py) for the rest.
 
+**Uplink cleanup:** before Gemini hears a turn, the server removes single-sample pops, ducks the button's release click and high-passes at 180 Hz (`UplinkCleaner`; settings from the 2026-10-31 calibration in `local/calibrations/`). Each turn is saved twice: as the device sent it, and as `…-clean.wav`, what Gemini heard.
+
 **Volume by voice:** "set the volume to 40 percent", "quieter", "max volume" and the like go to a `set_volume` tool. The server scales reply audio by the device's setting: 10–100 %, in equal dB steps from 1/40 (−32 dB) at 10 % to full scale at 100 %, which is the firmware's `VOLUME`. New devices start at 40 %. Settings are kept per device in `local/device-settings.json` (`MIC_DEVICE_SETTINGS`), so they survive restarts; each change is in the log.
 
 **Shell commands:** `MIC_SHELL=on` gives the AI a `run_command` tool: any shell command on the server, run without confirmation, in `MIC_SHELL_CWD` (default `~`), killed with its children after `MIC_SHELL_TIMEOUT` seconds (default 60). The trust model is that anyone who can talk to the device may run anything, and the server runs sandboxed. Commands don't see the server's `MIC_*`/`GEMINI_*` variables, but they can read `local/server.env` unless the sandbox hides it. Each command and its exit code are in the log. Turn audio is saved to `local/server-recordings/`. On macOS, allow Python's incoming connections if the firewall asks.

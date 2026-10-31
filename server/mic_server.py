@@ -41,6 +41,8 @@ import signal
 import time
 import wave
 
+import numpy as np
+from scipy.signal import butter, sosfilt, sosfilt_zi
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
@@ -89,10 +91,10 @@ def load_env_file(path):
             os.environ.setdefault(key.strip(), value.strip())
 
 
-def save_wav(directory, device_id, turn_id, pcm):
+def save_wav(directory, device_id, turn_id, pcm, suffix=""):
     directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = directory / f"{stamp}-{device_id}-turn{turn_id}.wav"
+    path = directory / f"{stamp}-{device_id}-turn{turn_id}{suffix}.wav"
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
@@ -110,6 +112,117 @@ def scale_pcm(pcm, gain):
     """16-bit little-endian PCM times gain (at most 1.0, so nothing clips)."""
     samples = array.array("h", pcm[:len(pcm) // 2 * 2])  # native order: little-endian on x86 and ARM
     return array.array("h", (round(s * gain) for s in samples)).tobytes()
+
+
+class UplinkCleaner:
+    """Cleans one turn of device audio before the AI hears it. The raw audio is what gets saved as the
+    turn's WAV; the cleaned audio is saved next to it as -clean.wav. Streaming: feed() each frame as it
+    arrives, flush() at turn_end. Work happens in fixed 10 ms blocks, so the result doesn't depend on how
+    the audio arrives, and lags the input by 2 ms plus the rest of a block. From the calibration of
+    2026-10-31 (local/calibrations/), three steps:
+
+    1. Pops: single-sample spikes (from ~00:00 on 2026-10-31, 3-58 per second; an electrical fault on
+       the prototype, not sound). A sample far off the line through its neighbours is replaced, with
+       those neighbours, by a straight line across. Runs longer than POP_MAX_RUN are left alone.
+    2. The button's release click: a jump to near full scale out of quiet (speech peaks around a third
+       of full scale, and loud speech is already loud before its peaks). Gain dips to CLICK_GAIN until
+       the click has died down. The dip starts LOOKAHEAD samples early and ramps, so it doesn't click.
+    3. A 4th-order high-pass at HIGH_PASS_HZ: the click's ring is a ~150 Hz resonance of the case, and
+       speech recognition doesn't need what's below.
+    """
+
+    BLOCK = UPLINK_RATE // 100  # samples worked on at a time
+    POP_FACTOR = 32             # spike threshold, in medians of |sample - mean of neighbours| over 100 ms
+    POP_FLOOR = 100             # ... but never below this, for near-digital silence
+    POP_MAX_RUN = 6             # samples; a longer run is speech, not a pop
+    CLICK_TRIGGER = 24000       # |sample| that starts a dip...
+    CLICK_QUIET = 14000         # ... if the 20 ms before it (up to 1 ms before) stayed below this
+    CLICK_HOLD = 6000           # the dip lasts until 10 ms after the last sample above this...
+    CLICK_MAX_MS = 80           # ... or this long at most
+    CLICK_GAIN = 0.03           # -30 dB
+    LOOKAHEAD = 32              # samples (2 ms)
+    HIGH_PASS_HZ = 180
+
+    def __init__(self):
+        self.sos = butter(4, self.HIGH_PASS_HZ, "highpass", fs=UPLINK_RATE, output="sos")
+        self.zi = sosfilt_zi(self.sos) * 0  # start at rest: the device already removed the DC offset
+        self.pending = np.zeros(0)  # input not yet worked on
+        self.ctx = np.zeros(2)  # the 2 samples before `pending`, pops removed: left context
+        self.e_hist = np.zeros(0)  # |sample - mean of neighbours| over the last 100 ms
+        self.history = np.zeros(UPLINK_RATE // 50)  # |sample| of the last 20 ms, for the click trigger
+        self.delay = np.zeros(self.LOOKAHEAD)  # pop-free samples waiting for the click stage
+        self.skip = self.LOOKAHEAD  # the delay's initial silence isn't audio: dropped from the output
+        self.gain = 1.0
+        self.n = 0  # samples seen by the click stage
+        self.click_start = self.click_last_loud = None
+
+    def feed(self, pcm):
+        self.pending = np.concatenate([self.pending, np.frombuffer(pcm[:len(pcm) // 2 * 2], "<i2")])
+        out = []
+        while len(self.pending) >= self.BLOCK + 2:  # 2 samples of right context for the pop check
+            out.append(self._block(self.pending[:self.BLOCK], self.pending[self.BLOCK:self.BLOCK + 2]))
+            self.pending = self.pending[self.BLOCK:]
+        return self._finish(out)
+
+    def flush(self):
+        out = []
+        if len(self.pending):
+            out.append(self._block(self.pending, np.repeat(self.pending[-1:], 2)))
+            self.pending = np.zeros(0)
+        out.append(self._duck_clicks(np.zeros(self.LOOKAHEAD)))  # silence pushes out the delayed samples
+        return self._finish(out)
+
+    def _finish(self, blocks):
+        out = np.concatenate(blocks) if blocks else np.zeros(0)
+        cut = min(self.skip, len(out))
+        out, self.skip = out[cut:], self.skip - cut
+        if not len(out):
+            return b""
+        out, self.zi = sosfilt(self.sos, out, zi=self.zi)
+        return np.clip(np.round(out), -32768, 32767).astype("<i2").tobytes()
+
+    def _block(self, x, right):
+        b = np.concatenate([self.ctx, x, right]).astype(np.float64)
+        end = 2 + len(x)
+        e = np.abs(b[1:-1] - (b[:-2] + b[2:]) / 2)  # e[i] belongs to b[i + 1]
+        self.e_hist = np.concatenate([self.e_hist, e[1:end - 1]])[-UPLINK_RATE // 10:]
+        threshold = max(self.POP_FACTOR * np.median(self.e_hist), self.POP_FLOOR)
+        bad = np.zeros(len(b), bool)
+        for i in np.nonzero(e[1:end - 1] > threshold)[0] + 2:
+            bad[max(i - 1, 2):min(i + 2, end)] = True  # the decimation filter smears a pop over ~3 samples
+        edges = np.diff(np.concatenate([[0], bad.astype(np.int8), [0]]))
+        for start, stop in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0]):
+            if stop - start <= self.POP_MAX_RUN:
+                b[start:stop] = np.linspace(b[start - 1], b[stop], stop - start + 2)[1:-1]
+        self.ctx = b[end - 2:end]
+        return self._duck_clicks(b[2:end])
+
+    def _duck_clicks(self, x):
+        """Gain is decided on the newest sample and applied LOOKAHEAD samples behind it."""
+        quiet_from, quiet_to = len(self.history), len(self.history) - UPLINK_RATE // 1000
+        hold, longest = UPLINK_RATE // 100, UPLINK_RATE * self.CLICK_MAX_MS // 1000
+        recent = np.concatenate([self.history, np.abs(x)])
+        delayed = np.concatenate([self.delay, x])
+        out = np.empty(len(x))
+        for j, v in enumerate(recent[quiet_from:]):
+            n = self.n + j
+            if (self.click_start is None and v >= self.CLICK_TRIGGER
+                    and recent[j:j + quiet_to].max() < self.CLICK_QUIET):
+                self.click_start = self.click_last_loud = n
+            if self.click_start is not None:
+                if v >= self.CLICK_HOLD:
+                    self.click_last_loud = n
+                if n - self.click_last_loud > hold or n - self.click_start > longest:
+                    self.click_start = None
+            if self.click_start is not None:  # down in 16 samples (1 ms), back up in 32 (2 ms)
+                self.gain = max(self.CLICK_GAIN, self.gain - (1 - self.CLICK_GAIN) / 16)
+            else:
+                self.gain = min(1.0, self.gain + (1 - self.CLICK_GAIN) / 32)
+            out[j] = delayed[j] * self.gain
+        self.n += len(x)
+        self.history = recent[-len(self.history):]
+        self.delay = delayed[-self.LOOKAHEAD:]
+        return out
 
 
 class DeviceSettings:
@@ -509,7 +622,9 @@ class DeviceSession:
         self.device_id = "unknown"
         self.conversation = None
         self.turn_id = None
-        self.turn_audio = bytearray()
+        self.turn_audio = bytearray()  # as the device sent it
+        self.clean_audio = bytearray()  # what the AI hears
+        self.cleaner = None
         self.next_reply_id = 1
         self.reply_id = None
         self.reply_turn = 0  # turn the next reply answers
@@ -528,8 +643,7 @@ class DeviceSession:
                         log.warning("%s: audio outside a turn, dropped", self.device_id)
                     else:
                         self.turn_audio += message
-                        if self.conversation:
-                            await self.conversation.audio(message)
+                        await self.send_clean(self.cleaner.feed(message))
                     continue
                 try:
                     msg = json.loads(message)
@@ -571,15 +685,20 @@ class DeviceSession:
             self.turn_id = msg.get("turn_id")
             self.reply_turn = self.turn_id
             self.turn_audio = bytearray()
+            self.clean_audio = bytearray()
+            self.cleaner = UplinkCleaner()
             log.info("%s: turn %s started at %d ms", self.device_id, self.turn_id, self.ms())
             if self.conversation:
                 await self.conversation.turn_start(self.turn_id)
         elif kind == "turn_end":
+            if self.cleaner:
+                await self.send_clean(self.cleaner.flush())
             turn_id, pcm = self.turn_id, bytes(self.turn_audio)
             self.turn_id = None
             log.info("%s: turn %s ended at %d ms: %.2f s of audio", self.device_id, turn_id, self.ms(),
                      len(pcm) / 2 / UPLINK_RATE)
             save_wav(self.recordings, self.device_id, turn_id, pcm)
+            save_wav(self.recordings, self.device_id, turn_id, bytes(self.clean_audio), "-clean")
             if self.conversation:
                 await self.conversation.turn_end(turn_id)
         elif kind == "playback_stopped":
@@ -589,6 +708,12 @@ class DeviceSession:
                 await self.conversation.interrupted(msg.get("reply_id"), msg.get("played_ms"))
         else:
             log.warning("%s: unknown message %r", self.device_id, kind)
+
+    async def send_clean(self, pcm):
+        if pcm:
+            self.clean_audio += pcm
+            if self.conversation:
+                await self.conversation.audio(pcm)
 
     # Reply sink, used by the conversation.
 
