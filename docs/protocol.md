@@ -12,7 +12,7 @@ Status: v1 draft (2026-10-24). Implemented so far by the firmware and the echo s
 | Encryption | None for v1 | LAN only. A TLS handshake costs a few hundred ms of crypto on the ESP32-S3 at every press. Revisit if the server is ever reachable from outside the LAN. |
 | Turn-taking | Explicit, from the button | Press = start of turn, release = end of turn. No voice activity detection anywhere. The mic is only on while S1 is held, and pressing S1 stops playback, so the AI never hears its own reply: no echo cancellation needed. |
 | Uplink audio | PCM, 16-bit little-endian, 16 kHz, mono | What the mic produces. ~32 KB/s is nothing for Wi-Fi. No codec to run on the device. |
-| Downlink audio | PCM, 16-bit little-endian, mono, at the rate the server names | The realtime AIs return 24 kHz; the device can play that directly instead of the server resampling. |
+| Downlink audio | PCM, 16-bit little-endian, mono, at the rate the server names, already scaled to the device's volume setting | The realtime AIs return 24 kHz; the device can play that directly instead of the server resampling. The volume is set by voice and kept on the server, so the protocol has no volume message; the firmware's own `VOLUME` is the ceiling (the server's 100%). |
 | Latency budget | Dominated by Wi-Fi association after power-on (1–3 s normally, a few hundred ms with fast-connect), then the AI's own response time. | The protocol itself is not the bottleneck. The device listens ~75 ms after the press and buffers audio in PSRAM until the socket is up. |
 
 ## Connection

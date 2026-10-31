@@ -21,13 +21,16 @@ Config (environment variables, or KEY=VALUE lines in the env file):
     MIC_PORT                  default 8765
     MIC_HOST                  default 0.0.0.0 (all interfaces)
     MIC_RECORDINGS            where turn audio is saved; default local/server-recordings
-    MIC_SHELL                 on: give the AI a run_command tool (shell commands on this machine, no
+    MIC_DEVICE_SETTINGS       per-device settings (volume), kept across restarts; default
+                              local/device-settings.json
+    MIC_SHELL                on: give the AI a run_command tool (shell commands on this machine, no
                               confirmation; meant for a sandboxed server). Default off
     MIC_SHELL_CWD             where commands run; default the home directory
     MIC_SHELL_TIMEOUT         seconds before a command is killed; default 60
 """
 
 import argparse
+import array
 import asyncio
 import datetime
 import json
@@ -48,11 +51,23 @@ DEFAULT_GEMINI_MODEL = "gemini-3.8-live"  # newest non-preview Live model on 202
 GEMINI_OUTPUT_RATE = 24000  # Live API output: 16-bit little-endian mono PCM at 24 kHz
 SHELL_OUTPUT_CHARS = 6000   # per stream; longer output keeps its start and end
 
+# Reply volume, set by voice (the set_volume tool) and applied here to the reply audio. 100% is
+# full scale, i.e. the firmware's VOLUME; each point below is the same step in dB.
+DEFAULT_VOLUME = 40        # percent, for a device with no saved setting
+MIN_VOLUME = 10            # percent; requests below it (including "mute") stop here
+MIN_VOLUME_GAIN = 1 / 40   # reply gain at MIN_VOLUME: -32 dB, ~0.36 dB per point
+
 SYSTEM_INSTRUCTION = """\
 You are a voice assistant on a small push-to-talk speaker at home. The user holds a button while \
 speaking and hears your reply through a small speaker. Keep replies short and conversational: \
 one to three sentences unless asked for more. Never use markdown, lists or symbols that don't \
 read aloud well."""
+
+VOLUME_INSTRUCTION = """
+The speaker's volume runs from {min} to 100 percent. When the user asks to change or check it, \
+call set_volume before saying anything; for an unspecific "louder" or "quieter", move 10 points. \
+Confirm in a few words, like "Volume 40." Never say you changed the volume without calling \
+set_volume."""
 
 SHELL_INSTRUCTION = """
 You can run shell commands on the home server (Linux) with run_command, and chain several to get \
@@ -84,6 +99,38 @@ def save_wav(directory, device_id, turn_id, pcm):
         w.setframerate(UPLINK_RATE)
         w.writeframes(pcm)
     return path
+
+
+def volume_gain(percent):
+    """Reply gain for a volume setting: MIN_VOLUME_GAIN at MIN_VOLUME up to 1.0 at 100%."""
+    return MIN_VOLUME_GAIN ** ((100 - percent) / (100 - MIN_VOLUME))
+
+
+def scale_pcm(pcm, gain):
+    """16-bit little-endian PCM times gain (at most 1.0, so nothing clips)."""
+    samples = array.array("h", pcm[:len(pcm) // 2 * 2])  # native order: little-endian on x86 and ARM
+    return array.array("h", (round(s * gain) for s in samples)).tobytes()
+
+
+class DeviceSettings:
+    """Per-device settings that outlive connections and server restarts. For now, the volume."""
+
+    def __init__(self, path):
+        self.path = pathlib.Path(path)
+        try:
+            self.data = json.loads(self.path.read_text())
+        except FileNotFoundError:
+            self.data = {}
+
+    def volume(self, device_id):
+        return self.data.get(device_id, {}).get("volume", DEFAULT_VOLUME)
+
+    def set_volume(self, device_id, percent):
+        self.data.setdefault(device_id, {})["volume"] = percent
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.data, indent=2) + "\n")
+        tmp.replace(self.path)  # atomic: a crash mid-write can't leave a half-written file
 
 
 def clip(data):
@@ -173,14 +220,15 @@ class GeminiBackend:
 
     name = "gemini"
 
-    def __init__(self, api_key, model, conversation_seconds, shell=None):
+    def __init__(self, api_key, model, conversation_seconds, settings, shell=None):
         from google import genai  # only needed for this backend
 
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.conversation_seconds = conversation_seconds
+        self.settings = settings  # DeviceSettings, for the set_volume tool
         self.shell = shell  # a Shell for the run_command tool, or None
-        self.instruction = SYSTEM_INSTRUCTION
+        self.instruction = SYSTEM_INSTRUCTION + VOLUME_INSTRUCTION.format(min=MIN_VOLUME)
         if shell:
             self.instruction += SHELL_INSTRUCTION.format(timeout=shell.timeout)
         self.handles = {}  # device_id -> (handle, monotonic time last updated)
@@ -217,6 +265,9 @@ class GeminiConversation:
         self.discarding = False
         self.replying = False
         self.tool_tasks = {}  # function call id -> task running it
+        # The current model turn called a tool. That turn ends (turn_complete) at the call, and
+        # Gemini speaks in a later turn, once it has the result: the device's reply stays open.
+        self.tool_called = False
 
     async def open(self):
         # Connect in the background, so the device's turn streams in (into the outbox) meanwhile.
@@ -251,21 +302,31 @@ class GeminiConversation:
     def _config(self, handle):
         from google.genai import types
 
-        # Google Search grounding, so questions about current events, weather, etc. get answers.
-        tools = [types.Tool(google_search=types.GoogleSearch())]
+        functions = [types.FunctionDeclaration(
+            name="set_volume",
+            description=f"Set the speaker volume of the device the user is talking on, {MIN_VOLUME}-100 "
+                        "percent. Give level for an absolute setting, or change for a relative one in "
+                        "percentage points (negative is quieter). Returns the resulting level. change=0 "
+                        "just reads it.",
+            parameters=types.Schema(type=types.Type.OBJECT, properties={
+                "level": types.Schema(type=types.Type.INTEGER, description=f"Absolute volume, {MIN_VOLUME}-100"),
+                "change": types.Schema(type=types.Type.INTEGER, description="Relative change, e.g. -10 or 10"),
+            }),
+        )]
         if self.backend.shell:
-            tools.append(types.Tool(function_declarations=[types.FunctionDeclaration(
+            functions.append(types.FunctionDeclaration(
                 name="run_command",
                 description="Run a shell command on the home server. Returns exit_code, stdout and "
                             "stderr (long output is cut in the middle), or an error.",
                 parameters=types.Schema(type=types.Type.OBJECT, required=["command"], properties={
                     "command": types.Schema(type=types.Type.STRING, description="A bash command line"),
                 }),
-            )]))
+            ))
         return types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],
             system_instruction=self.backend.instruction,
-            tools=tools,
+            # Google Search grounding, so questions about current events, weather, etc. get answers.
+            tools=[types.Tool(google_search=types.GoogleSearch()), types.Tool(function_declarations=functions)],
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)),
             session_resumption=types.SessionResumptionConfig(handle=handle),
@@ -320,6 +381,7 @@ class GeminiConversation:
             elif kind == "end":
                 await self.session.send_realtime_input(activity_end=types.ActivityEnd())
                 self.discarding = False  # from here on, output answers this turn
+                self.tool_called = False  # nor does a tool call from an interrupted reply count
 
     async def _receive(self):
         heard, said = [], []
@@ -337,6 +399,7 @@ class GeminiConversation:
                             task = asyncio.create_task(self._call_tool(call))
                             self.tool_tasks[call.id] = task
                             self.tasks.append(task)
+                            self.tool_called = True
                     if msg.tool_call_cancellation:
                         for call_id in msg.tool_call_cancellation.ids or []:
                             task = self.tool_tasks.pop(call_id, None)
@@ -368,6 +431,9 @@ class GeminiConversation:
                     if content.interrupted:
                         log.info("%s: Gemini reply interrupted", self.device_id)
                     if content.turn_complete:
+                        if self.tool_called:  # Gemini answers after the tool's result: keep waiting
+                            self.tool_called = False
+                            continue
                         if not self.replying:  # nothing to say: still close the turn for the device
                             await self.sink.begin_reply(GEMINI_OUTPUT_RATE)
                         await self.sink.end_reply()
@@ -397,6 +463,8 @@ class GeminiConversation:
                 result = {"error": f"{type(e).__name__}: {e}"}
             log.info("%s: command done in %d ms: %s", self.device_id, (time.monotonic() - t0) * 1000,
                      f"exit {result['exit_code']}" if "exit_code" in result else result["error"])
+        elif call.name == "set_volume":
+            result = self._set_volume(call.args or {})
         else:
             result = {"error": f"unknown function {call.name}"}
         self.tool_tasks.pop(call.id, None)
@@ -406,16 +474,38 @@ class GeminiConversation:
         except Exception as e:
             log.info("%s: sending the result of %s failed: %s", self.device_id, call.name, e)
 
+    def _set_volume(self, args):
+        """set_volume: stored before the result goes back, so the spoken confirmation, which Gemini
+        only starts once it has the result, already plays at the new volume."""
+        settings = self.backend.settings
+        old = settings.volume(self.device_id)
+        try:
+            if args.get("level") is not None:
+                wanted = round(float(args["level"]))
+            else:
+                wanted = old + round(float(args.get("change") or 0))
+        except (TypeError, ValueError):
+            return {"error": "level and change must be numbers"}
+        new = min(100, max(MIN_VOLUME, wanted))
+        if new != old:
+            settings.set_volume(self.device_id, new)
+        log.info("%s: volume %d%% -> %d%% (asked %s)", self.device_id, old, new, dict(args))
+        result = {"volume": new}
+        if new != wanted:
+            result["limited_to"] = "minimum" if new == MIN_VOLUME else "maximum"
+        return result
+
 
 # --- Device side ------------------------------------------------------------------------------
 
 
 class DeviceSession:
-    def __init__(self, ws: ServerConnection, backend, recordings, live):
+    def __init__(self, ws: ServerConnection, backend, recordings, live, settings):
         self.ws = ws
         self.backend = backend
         self.recordings = recordings
         self.live = live  # device_id -> its current DeviceSession
+        self.settings = settings
         self.device_id = "unknown"
         self.conversation = None
         self.turn_id = None
@@ -468,8 +558,8 @@ class DeviceSession:
         kind = msg.get("type")
         if kind == "hello":
             self.device_id = str(msg.get("device_id", "unknown"))
-            log.info("%s: hello at %d ms (firmware %s, battery %s mV)", self.device_id, self.ms(),
-                     msg.get("firmware"), msg.get("battery_mv"))
+            log.info("%s: hello at %d ms (firmware %s, battery %s mV, volume %d%%)", self.device_id, self.ms(),
+                     msg.get("firmware"), msg.get("battery_mv"), self.settings.volume(self.device_id))
             stale = self.live.get(self.device_id)
             if stale is not None and stale is not self:
                 log.info("%s: replacing its earlier connection, still open after %d ms", self.device_id, stale.ms())
@@ -511,6 +601,8 @@ class DeviceSession:
                                        "turn_id": self.reply_turn, "sample_rate": rate}))
 
     async def reply_audio(self, pcm):
+        # The volume is read per chunk, so a change applies from the next chunk on, mid-reply too.
+        pcm = scale_pcm(pcm, volume_gain(self.settings.volume(self.device_id)))
         for i in range(0, len(pcm), MAX_FRAME_BYTES):
             await self.ws.send(pcm[i:i + MAX_FRAME_BYTES])
         self.reply_bytes += len(pcm)
@@ -527,7 +619,7 @@ class DeviceSession:
             pass
 
 
-def make_backend():
+def make_backend(settings):
     choice = os.environ.get("MIC_BACKEND") or ("gemini" if os.environ.get("GEMINI_API_KEY") else "echo")
     if choice == "echo":
         return EchoBackend()
@@ -540,7 +632,7 @@ def make_backend():
             shell = Shell(os.path.expanduser(os.environ.get("MIC_SHELL_CWD", "~")),
                           float(os.environ.get("MIC_SHELL_TIMEOUT", "60")))
         return GeminiBackend(key, os.environ.get("MIC_GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
-                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "900")), shell)
+                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "900")), settings, shell)
     raise SystemExit(f"unknown MIC_BACKEND {choice!r} (gemini or echo)")
 
 
@@ -567,7 +659,8 @@ async def main():
     host = os.environ.get("MIC_HOST", "0.0.0.0")
     port = int(os.environ.get("MIC_PORT", "8765"))
     recordings = pathlib.Path(os.environ.get("MIC_RECORDINGS", REPO / "local" / "server-recordings"))
-    backend = make_backend()
+    settings = DeviceSettings(os.environ.get("MIC_DEVICE_SETTINGS", REPO / "local" / "device-settings.json"))
+    backend = make_backend(settings)
     live = {}
 
     async def handler(ws: ServerConnection):
@@ -580,7 +673,7 @@ async def main():
             await ws.close(4001, "unauthorized")
             return
         log.info("%s: connected", peer)
-        session = DeviceSession(ws, backend, recordings, live)
+        session = DeviceSession(ws, backend, recordings, live, settings)
         try:
             await session.run()
         finally:

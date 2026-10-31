@@ -44,8 +44,9 @@ constexpr int INTERRUPT_PRESS_MS = 30;
 constexpr int PREBUFFER_MS = 150;
 // Give up on a reply that stops arriving mid-way for this long.
 constexpr int REPLY_STALL_MS = 5000;
-// Reply playback volume, as a fraction of full amplitude (0.1 = 10%, about -20 dB).
-constexpr float VOLUME = 0.03f;
+// Reply playback volume, as a fraction of full amplitude: the loudest the device plays. The
+// server scales replies below this by the voice-set volume (its 100% = this; 10% = 1/40 of it).
+constexpr float VOLUME = 0.8f;
 // Audio queued in the amp's DMA when playback is cut (6 x 10 ms): written but not yet heard.
 constexpr int AMP_QUEUE_MS = 60;
 // Every recording starts with a ~100 ms mic start-up burst; it's never sent or measured.
