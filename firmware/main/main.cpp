@@ -44,6 +44,8 @@ constexpr int INTERRUPT_PRESS_MS = 30;
 constexpr int PREBUFFER_MS = 150;
 // Give up on a reply that stops arriving mid-way for this long.
 constexpr int REPLY_STALL_MS = 5000;
+// Reply playback volume, as a fraction of full amplitude (0.1 = 10%, about -20 dB).
+constexpr float VOLUME = 0.03f;
 // Audio queued in the amp's DMA when playback is cut (6 x 10 ms): written but not yet heard.
 constexpr int AMP_QUEUE_MS = 60;
 // Every recording starts with a ~100 ms mic start-up burst; it's never sent or measured.
@@ -228,7 +230,7 @@ Outcome reply_or_interrupt(ReplyStats &stats)
         if (played < available) {
             size_t n = std::min(block, available - played);
             if (speaking) {
-                amp::write(session::reply_samples() + played, n, 1.0f, done && played + n == available);
+                amp::write(session::reply_samples() + played, n, VOLUME, done && played + n == available);
             }
             played += n;
             last_audio_us = now_us();
@@ -247,7 +249,7 @@ Outcome reply_or_interrupt(ReplyStats &stats)
         stats.heard_ms = std::max(0, stats.heard_ms - AMP_QUEUE_MS);
         size_t n = std::min(block, session::reply_sample_count() - played);
         if (speaking && n) {
-            amp::write(session::reply_samples() + played, n, 1.0f, true);
+            amp::write(session::reply_samples() + played, n, VOLUME, true);
         }
     }
     if (speaking) {
