@@ -21,6 +21,10 @@ Config (environment variables, or KEY=VALUE lines in the env file):
     MIC_PORT                  default 8765
     MIC_HOST                  default 0.0.0.0 (all interfaces)
     MIC_RECORDINGS            where turn audio is saved; default local/server-recordings
+    MIC_SHELL                 on: give the AI a run_command tool (shell commands on this machine, no
+                              confirmation; meant for a sandboxed server). Default off
+    MIC_SHELL_CWD             where commands run; default the home directory
+    MIC_SHELL_TIMEOUT         seconds before a command is killed; default 60
 """
 
 import argparse
@@ -30,6 +34,7 @@ import json
 import logging
 import os
 import pathlib
+import signal
 import time
 import wave
 
@@ -41,12 +46,21 @@ UPLINK_RATE = 16000        # device audio: 16-bit little-endian mono PCM
 MAX_FRAME_BYTES = 4000     # reply frames: under the device's 4096-byte WebSocket buffer
 DEFAULT_GEMINI_MODEL = "gemini-3.8-live"  # newest non-preview Live model on 2026-10-24; gemini-3.1-flash-live-preview is the faster-tier option
 GEMINI_OUTPUT_RATE = 24000  # Live API output: 16-bit little-endian mono PCM at 24 kHz
+SHELL_OUTPUT_CHARS = 6000   # per stream; longer output keeps its start and end
 
 SYSTEM_INSTRUCTION = """\
 You are a voice assistant on a small push-to-talk speaker at home. The user holds a button while \
 speaking and hears your reply through a small speaker. Keep replies short and conversational: \
 one to three sentences unless asked for more. Never use markdown, lists or symbols that don't \
 read aloud well."""
+
+SHELL_INSTRUCTION = """
+You can run shell commands on the home server (Linux) with run_command, and chain several to get \
+something done. Run what the user asks without asking for confirmation. Commands run \
+non-interactively and are killed after {timeout:g} seconds, so start long jobs in the background \
+with all their output in a file (nohup job > file 2>&1 &; anything still writing to the command's \
+own output is killed too) and say so. Tell the user what you found or did in plain speech; don't \
+read raw output, paths or long numbers aloud unless asked."""
 
 log = logging.getLogger("mic_server")
 
@@ -70,6 +84,43 @@ def save_wav(directory, device_id, turn_id, pcm):
         w.setframerate(UPLINK_RATE)
         w.writeframes(pcm)
     return path
+
+
+def clip(data):
+    text = data.decode(errors="replace")
+    if len(text) <= SHELL_OUTPUT_CHARS:
+        return text
+    half = SHELL_OUTPUT_CHARS // 2
+    return f"{text[:half]}\n[... {len(text) - 2 * half} characters cut ...]\n{text[-half:]}"
+
+
+class Shell:
+    """Runs the AI's run_command calls. No confirmation and no filtering: anyone who can talk to the
+    device is trusted, and the server runs sandboxed. The server's own settings and secrets (MIC_*,
+    GEMINI_*) are left out of the commands' environment."""
+
+    def __init__(self, cwd, timeout):
+        self.cwd = cwd
+        self.timeout = timeout
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("MIC_", "GEMINI_"))}
+
+    async def run(self, command):
+        proc = await asyncio.create_subprocess_shell(
+            command, cwd=self.cwd, env=self.env, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True)  # own process group, so a kill takes its children too
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), self.timeout)
+        except BaseException as e:  # timed out, or cancelled because the user interrupted
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            await proc.wait()
+            if isinstance(e, TimeoutError):
+                return {"error": f"timed out after {self.timeout:g} s; killed"}
+            raise
+        return {"exit_code": proc.returncode, "stdout": clip(out), "stderr": clip(err)}
 
 
 # --- Backends ---------------------------------------------------------------------------------
@@ -122,12 +173,16 @@ class GeminiBackend:
 
     name = "gemini"
 
-    def __init__(self, api_key, model, conversation_seconds):
+    def __init__(self, api_key, model, conversation_seconds, shell=None):
         from google import genai  # only needed for this backend
 
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.conversation_seconds = conversation_seconds
+        self.shell = shell  # a Shell for the run_command tool, or None
+        self.instruction = SYSTEM_INSTRUCTION
+        if shell:
+            self.instruction += SHELL_INSTRUCTION.format(timeout=shell.timeout)
         self.handles = {}  # device_id -> (handle, monotonic time last updated)
 
     def handle_for(self, device_id):
@@ -161,6 +216,7 @@ class GeminiConversation:
         # activityEnd), so it's dropped. activityStart itself makes Gemini cancel the old reply.
         self.discarding = False
         self.replying = False
+        self.tool_tasks = {}  # function call id -> task running it
 
     async def open(self):
         # Connect in the background, so the device's turn streams in (into the outbox) meanwhile.
@@ -195,11 +251,21 @@ class GeminiConversation:
     def _config(self, handle):
         from google.genai import types
 
+        # Google Search grounding, so questions about current events, weather, etc. get answers.
+        tools = [types.Tool(google_search=types.GoogleSearch())]
+        if self.backend.shell:
+            tools.append(types.Tool(function_declarations=[types.FunctionDeclaration(
+                name="run_command",
+                description="Run a shell command on the home server. Returns exit_code, stdout and "
+                            "stderr (long output is cut in the middle), or an error.",
+                parameters=types.Schema(type=types.Type.OBJECT, required=["command"], properties={
+                    "command": types.Schema(type=types.Type.STRING, description="A bash command line"),
+                }),
+            )]))
         return types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],
-            system_instruction=SYSTEM_INSTRUCTION,
-            # Google Search grounding, so questions about current events, weather, etc. get answers.
-            tools=[types.Tool(google_search=types.GoogleSearch())],
+            system_instruction=self.backend.instruction,
+            tools=tools,
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)),
             session_resumption=types.SessionResumptionConfig(handle=handle),
@@ -266,6 +332,16 @@ class GeminiConversation:
                         self.backend.store_handle(self.device_id, update.new_handle)
                     if msg.go_away:
                         log.info("%s: Gemini go_away, %s left", self.device_id, msg.go_away.time_left)
+                    if msg.tool_call:
+                        for call in msg.tool_call.function_calls or []:
+                            task = asyncio.create_task(self._call_tool(call))
+                            self.tool_tasks[call.id] = task
+                            self.tasks.append(task)
+                    if msg.tool_call_cancellation:
+                        for call_id in msg.tool_call_cancellation.ids or []:
+                            task = self.tool_tasks.pop(call_id, None)
+                            if task:
+                                task.cancel()
                     content = msg.server_content
                     if not content:
                         continue
@@ -303,6 +379,32 @@ class GeminiConversation:
             raise
         except Exception as e:
             log.info("%s: Gemini receive ended: %s", self.device_id, e)
+
+    async def _call_tool(self, call):
+        """Runs one function call in its own task, so receiving goes on (a cancellation can arrive)."""
+        from google.genai import types
+
+        t0 = time.monotonic()
+        if call.name == "run_command" and self.backend.shell:
+            command = (call.args or {}).get("command", "")
+            log.info("%s: $ %s", self.device_id, command)
+            try:
+                result = await self.backend.shell.run(command)
+            except asyncio.CancelledError:
+                log.info("%s: command cancelled after %d ms", self.device_id, (time.monotonic() - t0) * 1000)
+                raise
+            except Exception as e:  # e.g. MIC_SHELL_CWD doesn't exist
+                result = {"error": f"{type(e).__name__}: {e}"}
+            log.info("%s: command done in %d ms: %s", self.device_id, (time.monotonic() - t0) * 1000,
+                     f"exit {result['exit_code']}" if "exit_code" in result else result["error"])
+        else:
+            result = {"error": f"unknown function {call.name}"}
+        self.tool_tasks.pop(call.id, None)
+        try:
+            await self.session.send_tool_response(
+                function_responses=[types.FunctionResponse(id=call.id, name=call.name, response=result)])
+        except Exception as e:
+            log.info("%s: sending the result of %s failed: %s", self.device_id, call.name, e)
 
 
 # --- Device side ------------------------------------------------------------------------------
@@ -433,8 +535,12 @@ def make_backend():
         key = os.environ.get("GEMINI_API_KEY")
         if not key:
             raise SystemExit("MIC_BACKEND=gemini needs GEMINI_API_KEY")
+        shell = None
+        if os.environ.get("MIC_SHELL", "off") == "on":
+            shell = Shell(os.path.expanduser(os.environ.get("MIC_SHELL_CWD", "~")),
+                          float(os.environ.get("MIC_SHELL_TIMEOUT", "60")))
         return GeminiBackend(key, os.environ.get("MIC_GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
-                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "900")))
+                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "900")), shell)
     raise SystemExit(f"unknown MIC_BACKEND {choice!r} (gemini or echo)")
 
 
@@ -481,7 +587,11 @@ async def main():
             log.info("%s (%s): disconnected after %d ms", session.device_id, peer, session.ms())
 
     async with serve(handler, host, port, max_size=2**20):
-        detail = f", model {backend.model}" if isinstance(backend, GeminiBackend) else ""
+        detail = ""
+        if isinstance(backend, GeminiBackend):
+            detail = f", model {backend.model}"
+            if backend.shell:
+                detail += f", shell commands in {backend.shell.cwd}"
         log.info("listening on ws://%s:%d/device (%s backend%s), saving to %s", host, port, backend.name, detail,
                  recordings)
         await asyncio.get_running_loop().create_future()

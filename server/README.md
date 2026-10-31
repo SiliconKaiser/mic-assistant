@@ -9,7 +9,9 @@ python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requireme
 server/.venv/bin/python server/mic_server.py        # reads local/server.env
 ```
 
-`local/server.env` (not in git) holds `MIC_DEVICE_TOKEN` (must match the firmware's `secrets.h`), `MIC_PORT` (8765) and `GEMINI_API_KEY`; see the docstring in [mic_server.py](mic_server.py) for the rest. Turn audio is saved to `local/server-recordings/`. On macOS, allow Python's incoming connections if the firewall asks.
+`local/server.env` (not in git) holds `MIC_DEVICE_TOKEN` (must match the firmware's `secrets.h`), `MIC_PORT` (8765) and `GEMINI_API_KEY`; see the docstring in [mic_server.py](mic_server.py) for the rest.
+
+**Shell commands:** `MIC_SHELL=on` gives the AI a `run_command` tool: any shell command on the server, run without confirmation, in `MIC_SHELL_CWD` (default `~`), killed with its children after `MIC_SHELL_TIMEOUT` seconds (default 60). The trust model is that anyone who can talk to the device may run anything, and the server runs sandboxed. Commands don't see the server's `MIC_*`/`GEMINI_*` variables, but they can read `local/server.env` unless the sandbox hides it. Each command and its exit code are in the log. Turn audio is saved to `local/server-recordings/`. On macOS, allow Python's incoming connections if the firewall asks.
 
 ## Run on the Linux server (production)
 
