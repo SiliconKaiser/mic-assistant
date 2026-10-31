@@ -7,10 +7,10 @@ Breadboard build: plain XIAO ESP32-S3, Adafruit PDM mic, MAX98357A amp, NeoPixel
 | Net | Connects | Notes |
 | --- | --- | --- |
 | VBAT | BT1 +, U1 VIN | Battery before the latch. 4.0–6.8 V (brand-new alkalines read ~1.7 V each). |
-| GND | BT1 −, U1 GND, U2 GND, U3 GND, U4 GND, U5 GND, U5 SEL, U6 GND, S1, C1, C2, C3, C4, C5, C6, R2, R3, R4 | One common ground. |
+| GND | BT1 −, U1 GND, U2 GND, U3 GND, U4 GND, U5 GND, U5 SEL, U6 GND, S1, C4, C5, R2, R3, R4 | One common ground. |
 | VSW | U1 VOUT, U2 VIN, R1 | Battery voltage after the latch. Zero when off. |
-| 5V | U2 VOUT, C1 +, U4 VIN, C5 +, C6, D1 anode | Regulator output. |
-| XIAO_5V | D1 cathode, U3 5V, C2, C3 | Keeps USB 5 V from back-feeding the regulator. |
+| 5V | U2 VOUT, U4 VIN, C5 +, D1 anode | Regulator output. |
+| XIAO_5V | D1 cathode, U3 5V | Keeps USB 5 V from back-feeding the regulator. |
 | 3V3 | U3 3V3, U5 3V, U6 VCC | XIAO's onboard regulator output. |
 | BTN | S1, U1 A, D2 cathode | Press pulls A low and turns the latch on. |
 | PTT | D2 anode, U3 D1 (GPIO2) | Internal pull-up on. Reads low while pressed. |
@@ -24,6 +24,8 @@ Breadboard build: plain XIAO ESP32-S3, Adafruit PDM mic, MAX98357A amp, NeoPixel
 | MIC_CLK | U3 D9 (GPIO8), U5 CLK | |
 | MIC_DAT | U3 D10 (GPIO9), U5 DAT | SEL to GND puts the mic on the left channel. |
 | SPK± | U4 SPK+, U4 SPK− to LS1 | Speaker only. Never connect either side to ground. |
+
+C1, C2, C3 and C6 were removed on 2026-10-24: the build ran fine without them (not yet tested on drained cells). The remaining refs keep their numbers.
 
 Not connected: U1 ON/CTRL/B, U2 EN (pulled up on the board), U3 D2 (GPIO3, a strapping pin), U4 GAIN (default 9 dB), U6 DOUT.
 
@@ -42,9 +44,7 @@ Not connected: U1 ON/CTRL/B, U2 EN (pulled up on the board), U3 D2 (GPIO3, a str
 | S1 | Push button | Owned |
 | D1 | 1N5817 | Mouser 863-1N5817G / kit 1N5819 |
 | D2 | 1N4148 | Owned kit |
-| C1 | 1000 µF 10 V electrolytic | Mouser 647-UHE1A102MPD |
-| C2, C6 | 10 µF electrolytic, 10 V or higher | Owned kit |
-| C3, C4 | 0.1 µF ceramic (marked 104) | Owned kit |
+| C4 | 0.1 µF ceramic (marked 104) | Owned kit |
 | C5 | 100 µF electrolytic, 10 V or higher | Owned kit |
 | R1 | 220 kΩ | Owned kit |
 | R2, R3 | 100 kΩ | Owned kit |
