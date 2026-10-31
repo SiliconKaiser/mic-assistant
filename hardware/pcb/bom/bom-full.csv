@@ -1,0 +1,37 @@
+﻿Ref,Qty,Value,Description,Footprint,Manufacturer,MPN,LCSC,JLC library,Unit USD,Line USD,Source,Notes
+U4,1,ESP32-S3-WROOM-1-N8R8,"ESP32-S3 module, 8 MB flash, 8 MB octal PSRAM, PCB antenna","SMD,25.5x18mm",Espressif,ESP32-S3-WROOM-1-N8R8,C2913201,Extended,5.0372,5.0372,JLCPCB assembly,Same memory as the XIAO; sdkconfig carries over
+U1,1,TPS63070RNMR,"Buck-boost 2-16 V in, 5.09 V out",VQFN-15-HR(2.5x3),Texas Instruments,TPS63070RNMR,C109322,Extended,1.2241,1.2241,JLCPCB assembly,Copy datasheet layout
+U5,1,MAX98357AETE+T,"I2S class-D amp, 3.2 W into 4 ohm",TQFN-16-EP(3x3),Analog Devices,MAX98357AETE+T,C910544,Extended,1.3240,1.3240,JLCPCB assembly,
+U6,1,MP34DT05TR-A,"PDM MEMS mic, top port",HCLGA-4LD(3x4),STMicroelectronics,MP34DT05TR-A,C2688664,Extended,2.1193,2.1193,JLCPCB assembly,"Only 555 in stock; alt LinkMEMS LMD2718T261-OA1 C5373237 ($0.29, different footprint)"
+U3,1,AP2112K-3.3TRG1,3.3 V LDO 600 mA,SOT-23-5,Diodes Inc,AP2112K-3.3TRG1,C51118,Extended,0.1774,0.1774,JLCPCB assembly,
+U2,1,USBLC6-2SC6,USB ESD protection,SOT-23-6,UMW,USBLC6-2SC6,C2687116,Extended,0.0478,0.0478,JLCPCB assembly,
+U7,1,WS2812B-2020-V6,"Addressable RGB LED, 3.3-5.3 V, top-emitting",SMD2020-4P,Worldsemi,WS2812B-2020-V6,C52917434,Extended,0.0915,0.0915,JLCPCB assembly,Runs on 3V3 within spec
+L1,1,1.5uH,"Power inductor 1.5 uH, Isat 4 A, 39 mOhm","SMD,4x4mm",cjiang,FNR4018S1R5MT,C167802,Extended,0.0557,0.0557,JLCPCB assembly,Datasheet part is Coilcraft XFL4020-152MEC C3033018 ($3.53)
+J1,1,S2B-PH-SM4-TB,"Battery connector, JST PH 2-pin, SMD right angle","SMD,P=2mm",JST,S2B-PH-SM4-TB(LF)(SN),C295747,Extended,0.2229,0.2229,JLCPCB assembly,"Pin 1 = VBAT_IN (+), pin 2 = GND"
+J2,1,TYPE-C-31-M-12,USB-C receptacle 16-pin,SMD,Korean Hroparts,TYPE-C-31-M-12,C165948,Extended,0.1869,0.1869,JLCPCB assembly,
+J3,1,HC-1.25-2PWT,"Speaker connector, 1.25 mm 2-pin, SMD right angle","SMD,P=1.25mm",HCTL,HC-1.25-2PWT,C2845379,Extended,0.0513,0.0513,JLCPCB assembly,Different series from J1 so battery and speaker plugs can't be swapped
+SW3,1,TS-1003S-07026,"PTT tactile switch 12x12 mm, 7 mm round actuator","SMD-4P,12x12mm",XUNPU,TS-1003S-07026,C455223,Extended,0.0794,0.0794,JLCPCB assembly,Height to match the button cap; 6/8.5/10 mm versions exist
+"SW1,SW2",2,TS-1187A-B-A-B,"Tactile switch 5.1 mm (reset, boot)","SMD-4P,5.1x5.1mm",XKB,TS-1187A-B-A-B,C318884,Basic,0.0207,0.0414,JLCPCB assembly,
+"Q1,Q2",2,AO3401A,P-MOSFET 30 V 4 A,SOT-23,AOS,AO3401A,C15127,Basic,0.0959,0.1918,JLCPCB assembly,"Q1 reverse protection, Q2 power switch"
+Q3,1,2N7002,N-MOSFET 60 V,SOT-23,CJ,2N7002,C8545,Basic,0.0161,0.0161,JLCPCB assembly,Power hold
+"D1,D2",2,1N4148W,Signal diode,SOD-123,Semtech,1N4148W,C81598,Basic,0.0124,0.0248,JLCPCB assembly,
+"D3,D4",2,B5819W,Schottky 1 A 40 V,SOD-123,CJ,B5819W SL,C8598,Basic,0.0261,0.0522,JLCPCB assembly,USB / 5V OR into the LDO
+"R1,R2,R3,R5,R14",5,100k,Resistor 100 kOhm 1%,0603,UNI-ROYAL,0603WAF1003T5E,C25803,Basic,0.0031,0.0155,JLCPCB assembly,
+R4,1,220k,Resistor 220 kOhm 1%,0603,UNI-ROYAL,0603WAF2203T5E,C22961,Basic,0.0015,0.0015,JLCPCB assembly,Battery divider top
+"R6,R12",2,10k,Resistor 10 kOhm 1%,0603,UNI-ROYAL,0603WAF1002T5E,C25804,Basic,0.0022,0.0044,JLCPCB assembly,
+R7,1,300k,Resistor 300 kOhm 1%,0603,UNI-ROYAL,0603WAF3003T5E,C23024,Basic,0.0038,0.0038,JLCPCB assembly,Buck-boost feedback top
+R8,1,56k,Resistor 56 kOhm 1%,0603,UNI-ROYAL,0603WAF5602T5E,C23206,Basic,0.0027,0.0027,JLCPCB assembly,Buck-boost feedback bottom: 5.09 V
+"R9,R10",2,5.1k,Resistor 5.1 kOhm 1%,0603,UNI-ROYAL,0603WAF5101T5E,C23186,Basic,0.0015,0.0030,JLCPCB assembly,USB-C CC pull-downs
+"R11,R13",2,0R,Resistor 0 Ohm (jumper),0805,UNI-ROYAL,0805W8F0000T5E,C17477,Basic,0.0044,0.0088,JLCPCB assembly,Lift to measure 3V3 / amp current
+"C1,C5,C13,C17,C18,C19",6,100nF,Capacitor 100 nF 50 V X7R,0603,YAGEO,CC0603KRX7R9BB104,C14663,Basic,0.0084,0.0504,JLCPCB assembly,
+C14,1,1uF,Capacitor 1 uF 50 V X5R,0603,Samsung,CL10A105KB8NNNC,C15849,Basic,0.0146,0.0146,JLCPCB assembly,EN reset delay
+"C2,C3,C10,C11,C16",5,10uF,Capacitor 10 uF 25 V X5R,0805,Samsung,CL21A106KAYNNNE,C15850,Basic,0.0426,0.2130,JLCPCB assembly,
+"C4,C9",2,10uF,Capacitor 10 uF 25 V X5R (next to U1 pins),0603,Samsung,CL10A106MA8NRNC,C96446,Basic,0.0444,0.0888,JLCPCB assembly,
+"C6,C7,C8,C12,C15",5,22uF,Capacitor 22 uF 25 V X5R,0805,Samsung,CL21A226MAQNNNE,C45783,Basic,0.1912,0.9560,JLCPCB assembly,
+LS1,1,4 ohm 3 W box speaker,"Enclosed speaker 42x30x9.1 mm, 1.25 mm 2-pin plug",,XHXDZ,4230BOX-4Ω3W-2P1.25,C49247023,,1.0212,1.0212,LCSC (loose),Not yet heard: order early with the alternative and compare against Adafruit #3351 (bench choice). Only 127 in stock
+LS1 (alt),1,4 ohm 3 W box speaker,"Enclosed speaker 35x25x6.3 mm, 1.25 mm 2-pin plug",,XHXDZ,3525BOX-4Ω3W-2P1.25,C49247004,,0.8134,0.8134,LCSC (loose),Smaller alternative for the listening test; 633 in stock
+P1,1,PHR-2,JST PH 2-pin housing for the battery lead (mates with J1),,JST,PHR-2,C157955,,0.0135,0.0135,LCSC (loose),Optional: the owned JST-PH pigtail kit does the same job
+P1 contacts,2,SPH-002T-P0.5S,"JST PH crimp contact, 24-30 AWG",,JST,SPH-002T-P0.5S,C111515,,0.0086,0.0172,LCSC (loose),"2 per plug; needs a PH crimp tool. Optional, as above"
+BT1,1,4xAA holder,4xAA battery holder with leads,,Adafruit,830,,,,,Owned,Already bought from Mouser (485-830); LCSC's catalog has no 4xAA holder with leads
+BT1 cells,4,AA alkaline,AA cells,,,,,,,,Local store,4 per device
+Button cap,1,,PTT button cap over SW3,,,,,,,,3D print,Part of the enclosure
