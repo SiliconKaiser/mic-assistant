@@ -20,10 +20,24 @@ constexpr int OFF_PULSE_MS = 50;
 constexpr int OFF_ATTEMPTS = 3;
 // After the latch turns off on USB, VSW takes a few hundred ms to fall below VSW_PRESENT_MV.
 constexpr int OFF_SETTLE_MS = 1000;
+// S1 must read pressed this long to count as turning us back on during shutdown.
+constexpr int WAKE_PRESS_MS = 30;
 
 void delay_ms(int ms)
 {
     vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+// True once S1 has read pressed for `ms`. Returns false as soon as it reads released.
+bool pressed_for(int ms)
+{
+    for (int held = 0; ptt_pressed(); held += 10) {
+        if (held >= ms) {
+            return true;
+        }
+        delay_ms(10);
+    }
+    return false;
 }
 
 }  // namespace
@@ -83,29 +97,38 @@ bool vsw_present()
     return battery::read_mv() > VSW_PRESENT_MV;
 }
 
-void off()
+bool off()
 {
     // Logs from the first ~1.5 s after a reset are usually lost on USB: the port re-enumerates
     // and the host reopens it too late. So repeat the state that matters here.
     ESP_LOGI(TAG, "powering off (VSW %d mV)", battery::read_mv());
-    // While S1 is held, latch pin A is low, which turns the latch straight back on.
-    while (ptt_pressed()) {
-        delay_ms(10);
-    }
 
     if constexpr (board::LATCH_SELF_HOLDING) {
         // The latch once ignored an OFF pulse on the bench, and a missed pulse leaves the
         // device on, draining the cells. So check whether VSW actually dropped, and retry.
+        // While S1 is held, latch pin A is low, which turns the latch straight back on. A press
+        // here, before a pulse or while power fades after one, is the user starting a new
+        // conversation, not a missed pulse: hand back to the caller instead of retrying.
+        // (Retrying used to end with the latch on and the firmware waiting for a USB-style press.)
         for (int attempt = 1; attempt <= OFF_ATTEMPTS; attempt++) {
+            if (pressed_for(WAKE_PRESS_MS)) {
+                ESP_LOGI(TAG, "S1 pressed during power-off: starting over");
+                return true;
+            }
             gpio_set_level(board::PIN_LATCH_OFF, 1);
             delay_ms(OFF_PULSE_MS);
             gpio_set_level(board::PIN_LATCH_OFF, 0);
 
-            // On battery we're dead by now. Still running: on USB, or the pulse was missed.
+            // On battery we're dead by now. Still running: on USB, the pulse was missed, or S1
+            // turned the latch back on as power faded.
             for (int waited = 0; waited < OFF_SETTLE_MS; waited += 50) {
                 if (!vsw_present()) {
                     ESP_LOGW(TAG, "latch is off; still running on USB power");
-                    return;
+                    return false;
+                }
+                if (pressed_for(WAKE_PRESS_MS)) {
+                    ESP_LOGI(TAG, "S1 pressed during power-off: starting over");
+                    return true;
                 }
                 delay_ms(50);
             }
@@ -117,6 +140,7 @@ void off()
         delay_ms(OFF_PULSE_MS);
         ESP_LOGW(TAG, "still running after power-off: on USB power");
     }
+    return false;
 }
 
 }  // namespace power

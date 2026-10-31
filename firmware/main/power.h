@@ -16,7 +16,9 @@ bool vsw_present();
 // Float the amp's pins (BCLK, LRCLK, DIN, SD). Done at init, and by amp::play() afterward.
 void release_amp_pins();
 
-// Cut our own power. Does not return on battery; returns only if powered over USB.
-void off();
+// Cut our own power. Does not return on battery, with one exception: S1 pressed during
+// shutdown turns the latch back on, and then this returns true. Start over as if just powered on.
+// Returns false on USB, where there's no power to cut.
+bool off();
 
 }  // namespace power

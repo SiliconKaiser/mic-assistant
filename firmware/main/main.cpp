@@ -369,14 +369,15 @@ extern "C" void app_main()
         ESP_LOGI(TAG, "battery %d mV", battery_mv);
 
         wifi::stop();
-        power::off();
-
-        // Only reached on USB, where there's no power to cut. Act as if powered off, and treat
-        // the next S1 press like the one that would power us on, so USB testing matches battery
-        // use. (Holding S1 while pressing reset proved too awkward to time.)
-        ESP_LOGI(TAG, "on USB: press S1 to record again");
-        while (!power::ptt_pressed()) {
-            delay_ms(10);
+        // A press during shutdown turned the latch back on: S1 is held, as after power-on.
+        if (!power::off()) {
+            // On USB, where there's no power to cut. Act as if powered off, and treat the next
+            // S1 press like the one that would power us on, so USB testing matches battery
+            // use. (Holding S1 while pressing reset proved too awkward to time.)
+            ESP_LOGI(TAG, "on USB: press S1 to record again");
+            while (!power::ptt_pressed()) {
+                delay_ms(10);
+            }
         }
         led::set(0, 0, 40);
     }
