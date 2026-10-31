@@ -23,6 +23,8 @@ Config (environment variables, or KEY=VALUE lines in the env file):
     MIC_RECORDINGS            where turn audio is saved; default local/server-recordings
     MIC_DEVICE_SETTINGS       per-device settings (volume), kept across restarts; default
                               local/device-settings.json
+    MIC_AUDIENCE              adult or child: child swaps in a prompt for a young child and refuses
+                              MIC_SHELL. Default adult
     MIC_SHELL                on: give the AI a run_command tool (shell commands on this machine, no
                               confirmation; meant for a sandboxed server). Default off
     MIC_SHELL_CWD             where commands run; default the home directory
@@ -64,6 +66,40 @@ You are a voice assistant on a small push-to-talk speaker at home. The user hold
 speaking and hears your reply through a small speaker. Keep replies short and conversational: \
 one to three sentences unless asked for more. Never use markdown, lists or symbols that don't \
 read aloud well."""
+
+# MIC_AUDIENCE=child: replaces SYSTEM_INSTRUCTION. Written for a five-year-old.
+CHILD_INSTRUCTION = """\
+You are a friendly talking helper inside a small push-to-talk speaker. The person talking to you \
+is a young child, about five years old. They hold a button while speaking and hear your reply \
+through a small speaker.
+
+How to talk: use simple words and short sentences a five-year-old understands. Be warm, cheerful, \
+patient and encouraging. Keep replies to one or two short sentences unless the child asks for a \
+story or a game. Never use markdown, lists or symbols that don't read aloud well. Young children's \
+speech can be hard to make out: if you aren't sure what they said, kindly ask them to say it again \
+instead of guessing. Silly questions deserve fun, kind answers; never tease or scold.
+
+What you can do: answer curious questions about animals, nature, space, how things work and the \
+world; tell short, gentle stories with happy endings; play simple games like riddles, rhymes, \
+counting, colors, letters and "guess the animal sound". End with a small question back now and \
+then to keep the fun going.
+
+Keep everything suitable for a five-year-old: nothing scary, violent, gory, sexual, or about drugs, \
+alcohol or weapons, no bad words, and no news that could frighten them. For big or tender topics \
+(death, illness, where babies come from, scary things they heard about), give a short, gentle, \
+honest answer in simple words and say a grown-up they love can tell them more. If the child asks \
+for something unsuitable, kindly change the subject to something fun.
+
+Safety: never suggest anything dangerous, like playing with fire, matches, knives, medicine, \
+cleaning products, electrical sockets, climbing high, going near water, or leaving home or going \
+anywhere with someone without a grown-up. If the child says they are hurt, scared, lost, sick or \
+that someone is being mean or making them feel unsafe, tell them gently to go and find a grown-up \
+they trust right now. Calling them by a first name they tell you is fine, but don't ask for their \
+full name, address, school or other private details, and don't repeat them if they share them. \
+Never tell them to keep a secret from their grown-ups.
+
+You are a helper in a speaker, not a person: say so simply if asked. You can't buy things, call \
+anyone or go anywhere."""
 
 VOLUME_INSTRUCTION = """
 The speaker's volume runs from {min} to 100 percent. When the user asks to change or check it, \
@@ -333,7 +369,7 @@ class GeminiBackend:
 
     name = "gemini"
 
-    def __init__(self, api_key, model, conversation_seconds, settings, shell=None):
+    def __init__(self, api_key, model, conversation_seconds, settings, shell=None, child=False):
         from google import genai  # only needed for this backend
 
         self.client = genai.Client(api_key=api_key)
@@ -341,7 +377,8 @@ class GeminiBackend:
         self.conversation_seconds = conversation_seconds
         self.settings = settings  # DeviceSettings, for the set_volume tool
         self.shell = shell  # a Shell for the run_command tool, or None
-        self.instruction = SYSTEM_INSTRUCTION + VOLUME_INSTRUCTION.format(min=MIN_VOLUME)
+        self.child = child  # MIC_AUDIENCE=child
+        self.instruction = (CHILD_INSTRUCTION if child else SYSTEM_INSTRUCTION) + VOLUME_INSTRUCTION.format(min=MIN_VOLUME)
         if shell:
             self.instruction += SHELL_INSTRUCTION.format(timeout=shell.timeout)
         self.handles = {}  # device_id -> (handle, monotonic time last updated)
@@ -752,12 +789,18 @@ def make_backend(settings):
         key = os.environ.get("GEMINI_API_KEY")
         if not key:
             raise SystemExit("MIC_BACKEND=gemini needs GEMINI_API_KEY")
+        audience = os.environ.get("MIC_AUDIENCE", "adult")
+        if audience not in ("adult", "child"):
+            raise SystemExit(f"unknown MIC_AUDIENCE {audience!r} (adult or child)")
+        child = audience == "child"
         shell = None
         if os.environ.get("MIC_SHELL", "off") == "on":
+            if child:
+                raise SystemExit("MIC_SHELL=on is not allowed with MIC_AUDIENCE=child")
             shell = Shell(os.path.expanduser(os.environ.get("MIC_SHELL_CWD", "~")),
                           float(os.environ.get("MIC_SHELL_TIMEOUT", "60")))
         return GeminiBackend(key, os.environ.get("MIC_GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
-                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "900")), settings, shell)
+                             float(os.environ.get("MIC_CONVERSATION_SECONDS", "900")), settings, shell, child)
     raise SystemExit(f"unknown MIC_BACKEND {choice!r} (gemini or echo)")
 
 
@@ -808,6 +851,8 @@ async def main():
         detail = ""
         if isinstance(backend, GeminiBackend):
             detail = f", model {backend.model}"
+            if backend.child:
+                detail += ", child audience"
             if backend.shell:
                 detail += f", shell commands in {backend.shell.cwd}"
         log.info("listening on ws://%s:%d/device (%s backend%s), saving to %s", host, port, backend.name, detail,

@@ -15,6 +15,8 @@ server/.venv/bin/python server/mic_server.py        # reads local/server.env
 
 **Volume by voice:** "set the volume to 40 percent", "quieter", "max volume" and the like go to a `set_volume` tool. The server scales reply audio by the device's setting: 10–100 %, in equal dB steps from 1/40 (−32 dB) at 10 % to full scale at 100 %, which is the firmware's `VOLUME`. New devices start at 40 %. Settings are kept per device in `local/device-settings.json` (`MIC_DEVICE_SETTINGS`), so they survive restarts; each change is in the log.
 
+**Child mode:** `MIC_AUDIENCE=child` swaps the prompt for one written for a five-year-old (simple words, nothing scary or unsafe, sends hard topics and any trouble to a grown-up, no personal details) and refuses to start with `MIC_SHELL=on`. dell-box runs in this mode. The Live API rejects `safety_settings`, so Gemini's default filters plus the prompt are all there is.
+
 **Shell commands:** `MIC_SHELL=on` gives the AI a `run_command` tool: any shell command on the server, run without confirmation, in `MIC_SHELL_CWD` (default `~`), killed with its children after `MIC_SHELL_TIMEOUT` seconds (default 60). The trust model is that anyone who can talk to the device may run anything, and the server runs sandboxed. Commands don't see the server's `MIC_*`/`GEMINI_*` variables, but they can read `local/server.env` unless the sandbox hides it. Each command and its exit code are in the log. Turn audio is saved to `local/server-recordings/`. On macOS, allow Python's incoming connections if the firewall asks.
 
 ## Run on the Linux server (production)
